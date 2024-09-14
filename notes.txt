@@ -1,0 +1,4 @@
+Apply for hprc (through tamu) for high power computing use Jaesung Lee
+Set up Anaconda, jupyter lab on server
+Try converting to pytorch
+Know auto-differentiation

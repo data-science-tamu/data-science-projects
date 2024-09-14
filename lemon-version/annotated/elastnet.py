@@ -15,8 +15,10 @@ learn_rate = 0.001
 # An incompressible assumed trial. Meaning Poisson (v, aka. nu) = 0.5
 # Using the rose example in this case
 # what is m?
-# what is m_data
+# what is m_data. (Youngs Modulus field?)
 # what is the y_elas
+
+# (0-256, 256-0)
 x_disp = np.loadtxt('data_incompressible/m_rose_nu_05/disp_coord')
 y_disp = np.loadtxt('data_incompressible/m_rose_nu_05/disp_data')
 x_elas = np.loadtxt('data_incompressible/m_rose_nu_05/strain_coord')
@@ -200,11 +202,13 @@ y_pred_v = y_predb[:, 0]
 
 # Read displacements
 
-# The placeholder variable (again why?), 
+# One of these is likely the lateral and the other likely the axial
+# As
+# The placeholder variable (replaced using feed_dict in run), 
 # pretty sure this represents the known data somehow
-y_u = ys_disp[:, 0] 
+y_u = ys_disp[:, 0] # Axial Displacement ? (disp_data)
 # The predicted value
-y_v = y_pred_v      
+y_v = y_pred_v  # Lateral Displacement?
 
 # Calculate strains
 
@@ -216,31 +220,47 @@ y_v = y_pred_v
 def conv2d(x, W):
     return tf.nn.conv2d(x, W, strides = [1, 1, 1, 1], padding = 'VALID')
 
+# 4D matrix as function conv2d requires it
 u_matrix = tf.reshape(y_u, [257, 257])
 v_matrix = tf.reshape(y_v, [257, 257])
 u_matrix_4d = tf.reshape(u_matrix, [-1, 257, 257, 1])
 v_matrix_4d = tf.reshape(v_matrix, [-1, 257, 257, 1])
-conv_x = np.array([[[[-0.5]], [[-0.5]]], [[[0.5]], [[0.5]]], ])
-conv_y = np.array([[[[0.5]], [[-0.5]]], [[[0.5]], [[-0.5]]], ])
+conv_x = np.array(
+    [[[[-0.5]], [[-0.5]]], 
+     [[[0.5]], [[0.5]]], ])
+conv_y = np.array(
+    [[[[0.5]], [[-0.5]]], 
+     [[[0.5]], [[-0.5]]], ])
 
+# the convolutions - calculates the derivatives (for displacement)
+# WHY using different types for the two calculations
 conv_x = tf.constant(conv_x, dtype = tf.float32)
 conv_y = tf.constant(conv_y, dtype = tf.float32)
-y_e_xx = conv2d(u_matrix_4d, conv_x)
-y_e_yy = conv2d(v_matrix_4d, conv_y)
-y_r_xy = conv2d(u_matrix_4d, conv_y) + conv2d(v_matrix_4d, conv_x)
-y_e_xx = 100*tf.reshape(y_e_xx, [-1])
-y_e_yy = 100*tf.reshape(y_e_yy, [-1])
-y_r_xy = 100*tf.reshape(y_r_xy, [-1])
+
+# Strain-displacement relation
+y_e_xx = conv2d(u_matrix_4d, conv_x) # epsilon xx
+y_e_yy = conv2d(v_matrix_4d, conv_y) # epsilon yy
+y_r_xy = conv2d(u_matrix_4d, conv_y) + conv2d(v_matrix_4d, conv_x) # gamma xy
+
+# adjusting the values
+y_e_xx = 100*tf.reshape(y_e_xx, [-1]) # epsilon xx
+y_e_yy = 100*tf.reshape(y_e_yy, [-1]) # epsilon yy
+y_r_xy = 100*tf.reshape(y_r_xy, [-1]) # gamma xy
 
 # Define elastic tensors
 
+# Elastic Constitutive Relation matrix
 c_matrix = (1/(1-(1/2.0)**2))*np.array([[1, 1/2.0, 0], [1/2.0, 1, 0], [0, 0, (1-1/2.0)/2.0]])
 c_matrix = tf.constant(c_matrix, dtype = tf.float32)
 
 # Calculate stresses
 
+# right side {}
 strain    = tf.stack([y_e_xx, y_e_yy, y_r_xy], axis = 1)
+# TODO: check why being stacked
 modulus   = tf.stack([y_pred_m, y_pred_m, y_pred_m], axis = 1)
+
+# The result left {}
 stress    = tf.multiply(tf.matmul(strain, c_matrix), modulus)
 stress_xx = stress[:, 0]
 stress_yy = stress[:, 1]
@@ -254,33 +274,54 @@ stress_xy_matrix = tf.reshape(stress_xy, [256, 256])
 
 # Calculate sum of sub stresses
 
-sum_conv = np.array([[[[1.0]], [[1.0]], [[1.0]]], [[[1.0]], [[1.0]], [[1.0]]],
-[[[1.0]], [[1.0]], [[1.0]]], ])
+# Why using sum_conv, might be average of 3x3 centered
+sum_conv = np.array(
+    [[[[1.0]], [[1.0]], [[1.0]]], 
+     [[[1.0]], [[1.0]], [[1.0]]],
+    [[[1.0]], [[1.0]], [[1.0]]], ])
 y_pred_m_matrix = tf.reshape(y_pred_m, [256, 256])
 y_pred_m_matrix_4d = tf.reshape(y_pred_m_matrix, [-1, 256, 256, 1])
-y_pred_m_conv = conv2d(y_pred_m_matrix_4d, sum_conv)
+y_pred_m_conv = conv2d(y_pred_m_matrix_4d, sum_conv) # The averaged convolution result
+
+# Transform stress to 4D
 stress_xx_matrix_4d = tf.reshape(stress_xx_matrix, [-1, 256, 256, 1])
 stress_yy_matrix_4d = tf.reshape(stress_yy_matrix, [-1, 256, 256, 1])
 stress_xy_matrix_4d = tf.reshape(stress_xy_matrix, [-1, 256, 256, 1])
-wx_conv_xx = np.array([[[[-1.0]], [[-1.0]], [[-1.0]]], [[[0.0]], [[0.0]], [[0.0]]],
-[[[1.0]], [[1.0]], [[1.0]]], ])
-wx_conv_xy = np.array([[[[1.0]], [[0.0]], [[-1.0]]], [[[1.0]], [[0.0]], [[-1.0]]],
-[[[1.0]], [[0.0]], [[-1.0]]], ])
-wy_conv_yy = np.array([[[[1.0]], [[0.0]], [[-1.0]]], [[[1.0]], [[0.0]], [[-1.0]]],
-[[[1.0]], [[0.0]], [[-1.0]]], ])
-wy_conv_xy = np.array([[[[-1.0]], [[-1.0]], [[-1.0]]], [[[0.0]], [[0.0]], [[0.0]]],
-[[[1.0]], [[1.0]], [[1.0]]], ])
 
+# Convolutions from paper - calculate derivatives of straing
+wx_conv_xx = np.array(
+    [[[[-1.0]], [[-1.0]], [[-1.0]]], 
+     [[[0.0]], [[0.0]], [[0.0]]],
+    [[[1.0]], [[1.0]], [[1.0]]], ])
+wx_conv_xy = np.array(
+    [[[[1.0]], [[0.0]], [[-1.0]]], 
+     [[[1.0]], [[0.0]], [[-1.0]]],
+    [[[1.0]], [[0.0]], [[-1.0]]], ])
+wy_conv_yy = np.array(
+    [[[[1.0]], [[0.0]], [[-1.0]]], 
+     [[[1.0]], [[0.0]], [[-1.0]]],
+    [[[1.0]], [[0.0]], [[-1.0]]], ])
+wy_conv_xy = np.array(
+    [[[[-1.0]], [[-1.0]], [[-1.0]]], 
+     [[[0.0]], [[0.0]], [[0.0]]],
+    [[[1.0]], [[1.0]], [[1.0]]], ])
+
+# Make tensors
 wx_conv_xx = tf.constant(wx_conv_xx, dtype = tf.float32)
 wx_conv_xy = tf.constant(wx_conv_xy, dtype = tf.float32)
 wy_conv_yy = tf.constant(wy_conv_yy, dtype = tf.float32)
 wy_conv_xy = tf.constant(wy_conv_xy, dtype = tf.float32)
+
+# From equilibrium condition
 fx_conv_xx = conv2d(stress_xx_matrix_4d, wx_conv_xx)
 fx_conv_xy = conv2d(stress_xy_matrix_4d, wx_conv_xy)
-fx_conv_sum = fx_conv_xx + fx_conv_xy
+fx_conv_sum = fx_conv_xx + fx_conv_xy # Result that should be 0
+
 fy_conv_yy = conv2d(stress_yy_matrix_4d, wy_conv_yy)
 fy_conv_xy = conv2d(stress_xy_matrix_4d, wy_conv_xy)
-fy_conv_sum = fy_conv_yy + fy_conv_xy
+fy_conv_sum = fy_conv_yy + fy_conv_xy # Result that should be 0
+
+# Normalization, maybe h or t in e(i,j) equation
 fx_conv_sum_norm = tf.divide(fx_conv_sum, y_pred_m_conv)
 fy_conv_sum_norm = tf.divide(fy_conv_sum, y_pred_m_conv)
 
@@ -292,13 +333,40 @@ fy_conv_sum_norm = tf.divide(fy_conv_sum, y_pred_m_conv)
 # calculations, which is probably important to know
 # THOUGH: still a continuation of above math
 
+# Why is this using the known ms for testing 
+# (if I understand the purpose as being to guess the m_data when
+# it is unknown)
+# Used first to create a tensor full of the mean modu
+# - The mean_modu is used to calculate the loss of m
+# - which is then used to train the model
+# - NOTE: must have an accurate mean_modu to train the model
+# - Might be able to also method for pred_v (displacement)
+#   to calculate the loss (doesn't have -mean)
+# Used in the error function (only called to visualize error)
 mean_modu = tf.constant(np.mean(y_elas), dtype = tf.float32)
+
+# Equilibrium loss. PDE loss.
 loss_x = tf.reduce_mean(tf.abs(fx_conv_sum_norm))
 loss_y = tf.reduce_mean(tf.abs(fy_conv_sum_norm))
+
+# loss_m (modulus)
+# L_e (13)
+# "In practice mean value could be arbitrary > 0"
+# To avoid minimizing E to 0, therefore use E_bar
+# king of cheating in a way, could try and find a way to fix this
+# Could apply boundary condition / include boundary condition
 loss_m = tf.abs(tf.reduce_mean(y_pred_m) - mean_modu)
+# loss_v (poisson's ?)
+# L_d (15)
 loss_v = tf.abs(tf.reduce_mean(y_pred_v))
+# Loss
+# (14)
 loss = loss_x + loss_y + loss_m/100 + loss_v/100
+
+# Only used for reporting
 err = tf.reduce_sum(tf.abs(y_elas - y_pred_m))
+
+# Training
 train_step = tf.train.AdamOptimizer(learn_rate).minimize(loss) # IMPORTANT?
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
