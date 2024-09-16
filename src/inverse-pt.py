@@ -78,14 +78,9 @@ for layer in model.children():
 
 quit()
 
-
-
-
-
-
-
-
-
+# Below is incomplete code for training model, might move to a
+# Jupyter Notebook for convenience and leave this file to contain just
+# the model and a get model function
 
 # Data imports for a given
 path_to_data = "existing/elastnet"
