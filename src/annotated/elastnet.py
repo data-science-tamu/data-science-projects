@@ -237,6 +237,10 @@ conv_y = np.array(
 conv_x = tf.constant(conv_x, dtype = tf.float32)
 conv_y = tf.constant(conv_y, dtype = tf.float32)
 
+# Might be because their are 257x257 disp_coordinates but want
+# the strains to be 256x256 representing the intersections
+# like the strain_data file (0.5 to 255.5)
+
 # Strain-displacement relation
 y_e_xx = conv2d(u_matrix_4d, conv_x) # epsilon xx
 y_e_yy = conv2d(v_matrix_4d, conv_y) # epsilon yy
