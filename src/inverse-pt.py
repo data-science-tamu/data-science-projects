@@ -66,15 +66,18 @@ def init_weight_and_bias(layer):
         )
         layer.bias.data.fill_(initial_bias)
         
-
+# Create the model (with default configuration)
 model = InverseModel()
 model.apply(init_weight_and_bias)
 print(model)
 
-for layer in model.children():
-    if isinstance(layer, torch.nn.Linear):
-        print(layer.state_dict()['weight'])
-        print(layer.state_dict()['weight'])
+def display_weights(model):
+    for layer in model.children():
+        if isinstance(layer, torch.nn.Linear):
+            print("weights:", layer.state_dict()['weight'])
+            print("bias:", layer.state_dict()['bias'])
+
+display_weights(model)
 
 quit()
 
