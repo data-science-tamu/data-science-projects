@@ -67,6 +67,101 @@ def init_weight_and_bias(layer):
         layer.bias.data.fill_(initial_bias)
         
 
+# Calculating the loss for the inverse model
+"""
+(12) L = w_r L_r + w_e L_e
+where L_e is the elasticity loss,
+and L_r is the residual force loss
+
+(13) L_e = 1/(q^2) | sum(i=1 to q) sum(j=1 to q) E_pred(i,j) - sum(i=1 to q) sum(j=1 to q) E(i,j)|
+where E_pred(x,y) is the elasticity at a given position (x, y).
+and E(x,y) is the mean elasticity value (does it work with arbitrary value. ie: 0.5 or 1)
+    It is a physical constraint
+and q is the dimension of the elasticity image
+
+A normalized MAE for the loss of the residual forces
+(8) L_r = 1/(p^2) sum(i to p) sum(j to p) | e(i,j) | / (E_hat_pred (i, j))
+Where e(i,j) is the residual force in a subregion
+ and p the dimension of the residual force map
+E_hat_pred(i,j) is the sum of the Young's Modulus values in a sub-region
+Defined as
+(9) sum(a=1 to 3) sum(b=1 to 3) E_pred(i+a-1, j+b-1)
+- The calculation was done by sliding a 3 by 3 kernel of all ones.
+"""
+"""
+From the provided elastnet.py
+
+# For the strain:
+def conv2d(x, W):
+    return tf.nn.conv2d(
+        tensor, convolution_matrix, strides=[1,1,1,1],padding='VALID'
+    )
+strain is calculated using conv 2d;
+conv_x = [
+    [-0.5, -0.5],
+    [0.5, 0.5]]
+conv_y = [
+    [0.5, -0.5],
+    [0.5, -0.5]]
+u_mat = axial displacement? (u_x)
+v_mat = lateral displacement? (u_y)
+
+# equation (1)
+e_xx = conv2d(u_mat, conv_x) # epsilon_xx
+e_yy = conv2d(v_mat, conv_y) # epsilon_yy
+r_xy = conv2d(u_mat, conv_y) + conv2d(v_mat, conv_x) # gamma_xy
+
+Values are then adjusted
+e_xx, e_yy, r_xy = 100 * reshape to 1D ([-1])
+# Will likely just use the given strain data (no lateral? data given)
+# for the inverse problem
+
+# # For the elasticity
+# # Elastic Constitutive Relation, equation (2)
+# What the strain {} is multiplied by
+ecr_matrix = ( 1 / (1 - v^2)) * [[ 1,  v,     0   ],
+                                 [ v,  1,     0   ],
+                                   0,  0, (1-v)/2 ]]
+# Right side {e_xx, e_yy, r_xy}
+strain_stack = stack([e_xx, e_yy, e_xy], axis = 1) # Or just the strain file
+
+# The E value
+y_mod_stack = stack([pred_m, pred_m, pred_m], axis = 1) # pred_m is the youngs modulus
+
+# What to do with v, poisson's (especially the square) (guess below)
+v_stack = stack([v_pred, v_pred, v_pred], axis = 1)
+for the outside one, can do .multiply(v_stack, v_stack)
+
+# The fraction in front.
+=> nn.divide(y_mod_stack, 1 - nn.multiply(v_stack, v_stack))
+
+# How to sub v into the matrix.
+# Could try
+ecr_matrices = [
+    [[ 1,  v,     0   ],
+     [ v,  1,     0   ],
+       0,  0, (1-v)/2 ]], for v in v_stack[:, 0]
+]
+# ?
+# need to test value results (with v = 0.5)
+
+
+"""
+class CustomLoss(torch.nn.Module):
+    E_CONSTRAINT = 1
+    def __init__(self):
+        super().__init__()
+        # The Losses
+        self.loss_r = 1 
+        self.loss_e = 1 
+
+        # The constants multiples of loss
+        self.weight_r = torch.nn.Parameter(0.25)
+        self.weight_e = torch.nn.Parameter(0.25)
+
+    def forward(self, x):
+        return self.weight_r * self.loss_r + self.weight_e * self.loss_e
+
 model = InverseModel()
 model.apply(init_weight_and_bias)
 print(model)
