@@ -278,6 +278,11 @@ stress_xy_matrix = tf.reshape(stress_xy, [256, 256])
 
 # Calculate sum of sub stresses
 
+""" 
+def conv2d(x, W):
+    return tf.nn.conv2d(x, W, strides = [1, 1, 1, 1], padding = 'VALID')
+"""
+
 # Why using sum_conv, might be average of 3x3 centered
 sum_conv = np.array(
     [[[[1.0]], [[1.0]], [[1.0]]], 
@@ -292,7 +297,7 @@ stress_xx_matrix_4d = tf.reshape(stress_xx_matrix, [-1, 256, 256, 1])
 stress_yy_matrix_4d = tf.reshape(stress_yy_matrix, [-1, 256, 256, 1])
 stress_xy_matrix_4d = tf.reshape(stress_xy_matrix, [-1, 256, 256, 1])
 
-# Convolutions from paper - calculate derivatives of straing
+# Convolutions from paper - calculate derivatives of strain
 wx_conv_xx = np.array(
     [[[[-1.0]], [[-1.0]], [[-1.0]]], 
      [[[0.0]], [[0.0]], [[0.0]]],

@@ -88,82 +88,127 @@ Defined as
 (9) sum(a=1 to 3) sum(b=1 to 3) E_pred(i+a-1, j+b-1)
 - The calculation was done by sliding a 3 by 3 kernel of all ones.
 """
-"""
-From the provided elastnet.py
-
-# For the strain:
-def conv2d(x, W):
-    return tf.nn.conv2d(
-        tensor, convolution_matrix, strides=[1,1,1,1],padding='VALID'
-    )
-strain is calculated using conv 2d;
-conv_x = [
-    [-0.5, -0.5],
-    [0.5, 0.5]]
-conv_y = [
-    [0.5, -0.5],
-    [0.5, -0.5]]
-u_mat = axial displacement? (u_x)
-v_mat = lateral displacement? (u_y)
-
-# equation (1)
-e_xx = conv2d(u_mat, conv_x) # epsilon_xx
-e_yy = conv2d(v_mat, conv_y) # epsilon_yy
-r_xy = conv2d(u_mat, conv_y) + conv2d(v_mat, conv_x) # gamma_xy
-
-Values are then adjusted
-e_xx, e_yy, r_xy = 100 * reshape to 1D ([-1])
-# Will likely just use the given strain data (no lateral? data given)
-# for the inverse problem
-
-# # For the elasticity
-# # Elastic Constitutive Relation, equation (2)
-# What the strain {} is multiplied by
-ecr_matrix = ( 1 / (1 - v^2)) * [[ 1,  v,     0   ],
-                                 [ v,  1,     0   ],
-                                   0,  0, (1-v)/2 ]]
-# Right side {e_xx, e_yy, r_xy}
-strain_stack = stack([e_xx, e_yy, e_xy], axis = 1) # Or just the strain file
-
-# The E value
-y_mod_stack = stack([pred_m, pred_m, pred_m], axis = 1) # pred_m is the youngs modulus
-
-# What to do with v, poisson's (especially the square) (guess below)
-v_stack = stack([v_pred, v_pred, v_pred], axis = 1)
-for the outside one, can do .multiply(v_stack, v_stack)
-
-# The fraction in front.
-=> nn.divide(y_mod_stack, 1 - nn.multiply(v_stack, v_stack))
-
-# How to sub v into the matrix.
-# Could try
-ecr_matrices = [
-    [[ 1,  v,     0   ],
-     [ v,  1,     0   ],
-       0,  0, (1-v)/2 ]], for v in v_stack[:, 0]
-]
-# ?
-# need to test value results (with v = 0.5)
-
-
-"""
-class CustomLoss(torch.nn.Module):
+# Code idea / how to from:
+# https://towardsdatascience.com/implementing-custom-loss-functions-in-pytorch-50739f9e0ee1
+# training function also based on / started from it.
+class InverseLoss(torch.nn.Module):
     E_CONSTRAINT = 1
-    def __init__(self):
+    def __init__(self, shape, mean_modulo = 1.0):
         super().__init__()
-        # The Losses
-        self.loss_r = 1 
-        self.loss_e = 1 
+        self.shape = shape
+        self.mean_modulo = mean_modulo
 
-        # The constants multiples of loss
-        self.weight_r = torch.nn.Parameter(0.25)
-        self.weight_e = torch.nn.Parameter(0.25)
+    def forward(self, pred_E, pred_v, strain):
+        stress = self.calculate_stress(pred_E, pred_v, strain)
+        loss_x, loss_y = self.calculate_loss_r(pred_E, stress)
+        
+        # Equation (13)
+        loss_e = torch.abs(torch.mean(pred_E) - self.mean_modulo)
+        
+        return loss_x + loss_y + loss_e / 100
 
-    def forward(self, x):
-        return self.weight_r * self.loss_r + self.weight_e * self.loss_e
+    # Based on equation (2), the elastic constitutive relation
+    def calculate_stress(self, pred_E, pred_v, strain):
+        # Strain comes stacked (assumption)
+        E_stack = torch.stack([pred_E, pred_E, pred_E], dim=1)
+        v_stack = torch.stack([pred_v, pred_v, pred_v], dim=1)        
+        
+        def c_matrix(v:float):
+            return torch.tensor(
+                np.array(
+                    [ [1, v, 0], 
+                      [v, 1, 0], 
+                      [0, 0, (1-v)/2.0] ]))
+            
+        mat_res = torch.stack([ 
+            torch.matmul(strain[i], c_matrix(v_stack[i, 0])) 
+                for i in range(strain.shape[0]) 
+        ])
 
+        v2 = torch.square(v_stack)
+        fraction = torch.divide(E_stack, 1 - v2)
+        stress = torch.multiply(mat_res, fraction)
+        return stress
+        
+
+    # Based on equation (8)
+    def calculate_loss_r(self, pred_E, stress) -> tuple[float, float]:
+        def conv2d(x, W):
+            return torch.conv2d(x, W, strides = [1, 1, 1, 1], padding = 'valid')
+
+        # Young's Modulus, (calculating E_hat (9) for L_r equation (8))
+        sum_kernel = np.array(
+            [[[[1.0]], [[1.0]], [[1.0]]], 
+            [[[1.0]], [[1.0]], [[1.0]]],
+            [[[1.0]], [[1.0]], [[1.0]]], ]   
+        )
+        pred_E_matrix = torch.reshape(pred_E, [self.shape[0], self.shape[1]])
+        pred_E_matrix_4d = torch.reshape(pred_E_matrix, [-1, self.shape[0], self.shape[1], 1])
+        pred_E_conv = conv2d(pred_E_matrix_4d, sum_kernel)
+        
+        # Transform Stress to 4d (-1, 256, 256, -1)
+        stress_xx = stress[:, 0]
+        stress_yy = stress[:, 1]
+        stress_xy = stress[:, 2]
+        
+        stress_xx_matrix = torch.reshape(stress_xx, [self.shape[0], self.shape[1]])
+        stress_yy_matrix = torch.reshape(stress_yy, [self.shape[0], self.shape[1]])
+        stress_xy_matrix = torch.reshape(stress_xy, [self.shape[0], self.shape[1]])
+        # I don't know why the provided code reshapes it twice, but I won't change it
+        stress_xx_matrix_4d = torch.reshape(stress_xx_matrix, [-1, self.shape[0], self.shape[1], 1])
+        stress_yy_matrix_4d = torch.reshape(stress_yy_matrix, [-1, self.shape[0], self.shape[1], 1])
+        stress_xy_matrix_4d = torch.reshape(stress_xy_matrix, [-1, self.shape[0], self.shape[1], 1])
+        
+        # Convolutions from paper - calculate derivatives of strain
+        wx_conv_xx = np.array(
+            [[[[-1.0]], [[-1.0]], [[-1.0]]], 
+            [[[0.0]], [[0.0]], [[0.0]]],
+            [[[1.0]], [[1.0]], [[1.0]]], ])
+        wx_conv_xy = np.array(
+            [[[[1.0]], [[0.0]], [[-1.0]]], 
+            [[[1.0]], [[0.0]], [[-1.0]]],
+            [[[1.0]], [[0.0]], [[-1.0]]], ])
+        wy_conv_yy = np.array(
+            [[[[1.0]], [[0.0]], [[-1.0]]], 
+            [[[1.0]], [[0.0]], [[-1.0]]],
+            [[[1.0]], [[0.0]], [[-1.0]]], ])
+        wy_conv_xy = np.array(
+            [[[[-1.0]], [[-1.0]], [[-1.0]]], 
+            [[[0.0]], [[0.0]], [[0.0]]],
+            [[[1.0]], [[1.0]], [[1.0]]], ])
+
+        # Make tensors
+        wx_conv_xx = torch.tensor(wx_conv_xx, dtype = torch.float32)
+        wx_conv_xy = torch.tensor(wx_conv_xy, dtype = torch.float32)
+        wy_conv_yy = torch.tensor(wy_conv_yy, dtype = torch.float32)
+        wy_conv_xy = torch.tensor(wy_conv_xy, dtype = torch.float32)
+        
+        
+        # From equilibrium condition
+        fx_conv_xx = conv2d(stress_xx_matrix_4d, wx_conv_xx)
+        fx_conv_xy = conv2d(stress_xy_matrix_4d, wx_conv_xy)
+        fx_conv_sum = fx_conv_xx + fx_conv_xy # Result that should be 0
+
+        fy_conv_yy = conv2d(stress_yy_matrix_4d, wy_conv_yy)
+        fy_conv_xy = conv2d(stress_xy_matrix_4d, wy_conv_xy)
+        fy_conv_sum = fy_conv_yy + fy_conv_xy # Result that should be 0
+
+        # Normalization, doing equation (8), rest was calculating residual forces
+        fx_conv_sum_norm = torch.divide(fx_conv_sum, pred_E_conv)
+        fy_conv_sum_norm = torch.divide(fy_conv_sum, pred_E_conv)
+        
+        # Finally get value of loss
+        loss_x = torch.mean(torch.abs(fx_conv_sum_norm))
+        loss_y = torch.mean(torch.abs(fy_conv_sum_norm))
+        return loss_x, loss_y
+
+
+data_shape = [256, 256]
 model = InverseModel()
 model.apply(init_weight_and_bias)
+optimizer = torch.optim.Adam(model.parameters(), lr=InverseModel.LEARN_RATE)
+loss_function = InverseLoss(data_shape)
+
 print(model)
 
 def display_weights(model):
@@ -172,9 +217,54 @@ def display_weights(model):
             print("weights:", layer.state_dict()['weight'])
             print("bias:", layer.state_dict()['bias'])
 
-display_weights(model)
-
 quit()
+
+# Training Sample Code
+"""
+# Code idea / how to from:
+# https://towardsdatascience.com/implementing-custom-loss-functions-in-pytorch-50739f9e0ee1
+
+def train(epoch):
+    network.train()
+    for batch_idx, (data, target) in enumerate(train_loader):
+        optimizer.zero_grad()
+        output = network(data)
+        loss = criterion(output, target)
+        loss.backward()
+        optimizer.step()
+        if batch_idx % 1000 == 0:
+        print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+            epoch, batch_idx * len(data), len(train_loader.dataset),
+            100. * batch_idx / len(train_loader), loss.item()))
+        train_losses.append(loss.item())
+        train_counter.append(
+            (batch_idx*64) + ((epoch-1)*len(train_loader.dataset)))
+        torch.save(network.state_dict(), 'results/model.pth')
+        torch.save(optimizer.state_dict(), 'results/optimizer.pth')
+
+def test():
+    network.eval()
+    test_loss = 0
+    correct = 0
+    with torch.no_grad():
+        for data, target in test_loader:
+        output = network(data)
+        test_loss += criterion(output, target).item()
+        pred = output.data.max(1, keepdim=True)[1]
+        correct += pred.eq(target.data.view_as(pred)).sum()
+    test_loss /= len(test_loader.dataset)
+    test_losses.append(test_loss)
+    print('\nTest set: Avg. loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        test_loss, correct, len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)))
+
+
+test()
+for epoch in range(1, n_epochs + 1):
+    train(epoch)
+    test()
+"""
+
 
 # Below is incomplete code for training model, might move to a
 # Jupyter Notebook for convenience and leave this file to contain just
