@@ -19,10 +19,10 @@ learn_rate = 0.001
 # what is the y_elas
 
 # (0-256, 256-0)
-x_disp = np.loadtxt('data_incompressible/m_rose_nu_05/disp_coord')
-y_disp = np.loadtxt('data_incompressible/m_rose_nu_05/disp_data')
-x_elas = np.loadtxt('data_incompressible/m_rose_nu_05/strain_coord')
-y_elas = np.loadtxt('data_incompressible/m_rose_nu_05/m_data')
+x_disp = np.loadtxt('data/incompressible/m_rose_nu_05/disp_coord')
+y_disp = np.loadtxt('data/incompressible/m_rose_nu_05/disp_data')
+x_elas = np.loadtxt('data/incompressible/m_rose_nu_05/strain_coord')
+y_elas = np.loadtxt('data/incompressible/m_rose_nu_05/m_data')
 
 # Standardizes the input
 ss_x = preprocessing.StandardScaler()
@@ -59,7 +59,7 @@ xs_elas = tf.placeholder(tf.float32, [None, 2])
 # For this example problem, the DNN's take two inputs, to predict one value
 W_fc1a = weight_variable([2, num_neuron])
 b_fc1a = bias_variable([num_neuron])
-h_fc1a = tf.nn.relu(tf.matmul(xs_elas, W_fc1a) + b_fc1a)
+h_fc1a = tf.nn.relu(tf.matmul(xs_elas, W_fc1a) + b_fc1a) # Strain coordinates
 
 W_fc2a = weight_variable([num_neuron, num_neuron])
 b_fc2a = bias_variable([num_neuron])
@@ -288,6 +288,7 @@ sum_conv = np.array(
     [[[[1.0]], [[1.0]], [[1.0]]], 
      [[[1.0]], [[1.0]], [[1.0]]],
     [[[1.0]], [[1.0]], [[1.0]]], ])
+print(sum_conv.shape)
 y_pred_m_matrix = tf.reshape(y_pred_m, [256, 256])
 y_pred_m_matrix_4d = tf.reshape(y_pred_m_matrix, [-1, 256, 256, 1])
 y_pred_m_conv = conv2d(y_pred_m_matrix_4d, sum_conv) # The averaged convolution result

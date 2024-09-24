@@ -4,9 +4,25 @@ import numpy as np
 import time
 
 from sklearn import preprocessing
-
+print("packages imported")
 # Setup
 
+# setting device on GPU if available, else CPU
+# Important as this is what makes tensors on the gpu
+device = torch.device('cuda') #  if torch.cuda.is_available() else 'cpu'
+device = torch.device('cpu')
+
+# torch.cuda.set_device(device)
+print('Using device:', device)
+print()
+
+
+#Additional Info when using cuda
+if device.type == 'cuda':
+    print(torch.cuda.get_device_name(0))
+    print('Memory Usage:')
+    print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
+    print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB')
 
 # Resources Consulted for setting up the model
 # https://machinelearningmastery.com/develop-your-first-neural-network-with-pytorch-step-by-step/
@@ -21,7 +37,7 @@ from sklearn import preprocessing
 class InverseModel(torch.nn.Module):
     # Default Values
     INPUT_SIZE = 2
-    OUTPUT_SIZE = 1
+    OUTPUT_SIZE = 2 # [0] is pred_E, [1] is pred_v
     NUM_NEURON = 128
     NUM_HIDDEN_LAYERS = 16
     ACTIVATION_FUNCTION = torch.nn.ReLU
@@ -94,7 +110,7 @@ Defined as
 class InverseLoss(torch.nn.Module):
     E_CONSTRAINT = 1
     def __init__(self, shape, mean_modulo = 1.0):
-        super().__init__()
+        super(InverseLoss, self).__init__()
         self.shape = shape
         self.mean_modulo = mean_modulo
 
@@ -115,14 +131,18 @@ class InverseLoss(torch.nn.Module):
         
         def c_matrix(v:float):
             return torch.tensor(
-                np.array(
                     [ [1, v, 0], 
                       [v, 1, 0], 
-                      [0, 0, (1-v)/2.0] ]))
-            
+                      [0, 0, (1-v)/2.0] ], 
+                dtype=torch.float32,
+                device=device)
+        
         mat_res = torch.stack([ 
-            torch.matmul(strain[i], c_matrix(v_stack[i, 0])) 
-                for i in range(strain.shape[0]) 
+            torch.matmul(
+                strain[i], 
+                c_matrix(v_stack.detach().numpy()[i, 0])
+            ) 
+            for i in range(strain.shape[0]) 
         ])
 
         v2 = torch.square(v_stack)
@@ -133,17 +153,24 @@ class InverseLoss(torch.nn.Module):
 
     # Based on equation (8)
     def calculate_loss_r(self, pred_E, stress) -> tuple[float, float]:
-        def conv2d(x, W):
-            return torch.conv2d(x, W, strides = [1, 1, 1, 1], padding = 'valid')
+        def conv2d(x, W:torch.Tensor):
+            W = W.view(1,1,3,3).repeat(1, 1, 1, 1)
+            return torch.nn.functional.conv2d(
+                x, W, 
+                stride = 1, 
+                padding = 'valid'
+            )
 
         # Young's Modulus, (calculating E_hat (9) for L_r equation (8))
-        sum_kernel = np.array(
-            [[[[1.0]], [[1.0]], [[1.0]]], 
-            [[[1.0]], [[1.0]], [[1.0]]],
-            [[[1.0]], [[1.0]], [[1.0]]], ]   
-        )
+        sum_kernel = torch.tensor(np.array(
+            [[1.0, 1.0, 1.0], 
+             [1.0, 1.0, 1.0],
+             [1.0, 1.0, 1.0],]   
+        ), dtype=torch.float32, device=device)
+        sum_kernel
+        
         pred_E_matrix = torch.reshape(pred_E, [self.shape[0], self.shape[1]])
-        pred_E_matrix_4d = torch.reshape(pred_E_matrix, [-1, self.shape[0], self.shape[1], 1])
+        pred_E_matrix_4d = torch.reshape(pred_E_matrix, [-1, 1, self.shape[0], self.shape[1]])
         pred_E_conv = conv2d(pred_E_matrix_4d, sum_kernel)
         
         # Transform Stress to 4d (-1, 256, 256, -1)
@@ -155,33 +182,33 @@ class InverseLoss(torch.nn.Module):
         stress_yy_matrix = torch.reshape(stress_yy, [self.shape[0], self.shape[1]])
         stress_xy_matrix = torch.reshape(stress_xy, [self.shape[0], self.shape[1]])
         # I don't know why the provided code reshapes it twice, but I won't change it
-        stress_xx_matrix_4d = torch.reshape(stress_xx_matrix, [-1, self.shape[0], self.shape[1], 1])
-        stress_yy_matrix_4d = torch.reshape(stress_yy_matrix, [-1, self.shape[0], self.shape[1], 1])
-        stress_xy_matrix_4d = torch.reshape(stress_xy_matrix, [-1, self.shape[0], self.shape[1], 1])
+        stress_xx_matrix_4d = torch.reshape(stress_xx_matrix, [-1, 1, self.shape[0], self.shape[1]])
+        stress_yy_matrix_4d = torch.reshape(stress_yy_matrix, [-1, 1, self.shape[0], self.shape[1]])
+        stress_xy_matrix_4d = torch.reshape(stress_xy_matrix, [-1, 1, self.shape[0], self.shape[1]])
         
         # Convolutions from paper - calculate derivatives of strain
         wx_conv_xx = np.array(
-            [[[[-1.0]], [[-1.0]], [[-1.0]]], 
-            [[[0.0]], [[0.0]], [[0.0]]],
-            [[[1.0]], [[1.0]], [[1.0]]], ])
+            [[-1.0, -1.0, -1.0], 
+             [0.0, 0.0, 0.0],
+             [1.0, 1.0, 1.0], ])
         wx_conv_xy = np.array(
-            [[[[1.0]], [[0.0]], [[-1.0]]], 
-            [[[1.0]], [[0.0]], [[-1.0]]],
-            [[[1.0]], [[0.0]], [[-1.0]]], ])
+            [[1.0, 0.0, -1.0], 
+             [1.0, 0.0, -1.0],
+             [1.0, 0.0, -1.0], ])
         wy_conv_yy = np.array(
-            [[[[1.0]], [[0.0]], [[-1.0]]], 
-            [[[1.0]], [[0.0]], [[-1.0]]],
-            [[[1.0]], [[0.0]], [[-1.0]]], ])
+            [[1.0, 0.0, -1.0], 
+             [1.0, 0.0, -1.0],
+             [1.0, 0.0, -1.0], ])
         wy_conv_xy = np.array(
-            [[[[-1.0]], [[-1.0]], [[-1.0]]], 
-            [[[0.0]], [[0.0]], [[0.0]]],
-            [[[1.0]], [[1.0]], [[1.0]]], ])
+            [[-1.0, -1.0, -1.0], 
+             [0.0, 0.0, 0.0],
+             [1.0, 1.0, 1.0], ])
 
         # Make tensors
-        wx_conv_xx = torch.tensor(wx_conv_xx, dtype = torch.float32)
-        wx_conv_xy = torch.tensor(wx_conv_xy, dtype = torch.float32)
-        wy_conv_yy = torch.tensor(wy_conv_yy, dtype = torch.float32)
-        wy_conv_xy = torch.tensor(wy_conv_xy, dtype = torch.float32)
+        wx_conv_xx = torch.tensor(wx_conv_xx, dtype = torch.float32, device=device)
+        wx_conv_xy = torch.tensor(wx_conv_xy, dtype = torch.float32, device=device)
+        wy_conv_yy = torch.tensor(wy_conv_yy, dtype = torch.float32, device=device)
+        wy_conv_xy = torch.tensor(wy_conv_xy, dtype = torch.float32, device=device)
         
         
         # From equilibrium condition
@@ -205,11 +232,21 @@ class InverseLoss(torch.nn.Module):
 
 data_shape = [256, 256]
 model = InverseModel()
+model.to(device)
 model.apply(init_weight_and_bias)
 optimizer = torch.optim.Adam(model.parameters(), lr=InverseModel.LEARN_RATE)
 loss_function = InverseLoss(data_shape)
 
-print(model)
+print("model initialized")
+#Additional Info when using cuda
+if device.type == 'cuda':
+    print(torch.cuda.get_device_name(0))
+    print('Memory Usage:')
+    print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
+    print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB')
+
+
+# print(model)
 
 def display_weights(model):
     for layer in model.children():
@@ -217,7 +254,38 @@ def display_weights(model):
             print("weights:", layer.state_dict()['weight'])
             print("bias:", layer.state_dict()['bias'])
 
-quit()
+# quit()
+
+# Import Training Data
+path_to_data = "./data"
+trial_name = "m_z1_nu_z1"
+disp_coord_data = np.loadtxt(f'{path_to_data}/compressible/{trial_name}/disp_coord')
+disp_data_data = np.loadtxt(f'{path_to_data}/compressible/{trial_name}/disp_data')
+m_data_data = np.loadtxt(f'{path_to_data}/compressible/{trial_name}/m_data')
+nu_data_data = np.loadtxt(f'{path_to_data}/compressible/{trial_name}/nu_data')
+strain_coord_data = np.loadtxt(f'{path_to_data}/compressible/{trial_name}/strain_coord')
+strain_data_data = np.loadtxt(f'{path_to_data}/compressible/{trial_name}/strain_data')
+
+print("data imported")
+
+# Standardize the inputs
+# Reshape to guarantee the correct size. (-1 indicates any size)
+ss_coordinates = preprocessing.StandardScaler()
+disp_coord = torch.tensor(
+    ss_coordinates.fit_transform(disp_coord_data.reshape(-1, 2)),
+    dtype=torch.float32, # Float instead of Double, this is how the provided code did it
+    device=device
+)
+strain_coord = torch.tensor(
+    ss_coordinates.fit_transform(strain_coord_data.reshape(-1, 2)),
+    dtype=torch.float32,
+    device=device
+)
+strain_data = torch.tensor(
+    strain_data_data, 
+    dtype=torch.float32,
+    device=device
+)
 
 # Training Sample Code
 """
@@ -241,7 +309,37 @@ def train(epoch):
             (batch_idx*64) + ((epoch-1)*len(train_loader.dataset)))
         torch.save(network.state_dict(), 'results/model.pth')
         torch.save(optimizer.state_dict(), 'results/optimizer.pth')
+""" 
+NUM_EPOCHS = 1 # The number of times the model trains 1000 times
+def train(epoch, coordinate_data, strain_data):
+    model.train()
+    for i in range (1, 1001):
+        optimizer.zero_grad() # Reset the optimizer?
+        output = model(coordinate_data)
+        pred_E = output[:, 0]
+        pred_v = output[:, 1]
+        loss = loss_function(pred_E, pred_v, strain_data)
+        loss.backward()
+        optimizer.step()
+        
+        if i % 100 == 0:
+            print(f"Train Epoch: {epoch} [{i}/1000 ({i/10.0:.2f}%)]\tLoss: {loss.item():.6f}")
 
+# print(disp_coord)
+for e in range(NUM_EPOCHS):
+    print(f"epoch {e} starting")
+    train(e, strain_coord, strain_data)
+
+print("Training Finished")
+model.eval()
+output = model(strain_coord)
+pred_E = output[:, 0]
+pred_v = output[:, 1]
+np.savetxt("pred_E.txt", pred_E)
+np.savetxt("pred_v.txt", pred_v)
+print("Done")
+
+"""
 def test():
     network.eval()
     test_loss = 0
@@ -266,22 +364,6 @@ for epoch in range(1, n_epochs + 1):
 """
 
 
-# Below is incomplete code for training model, might move to a
-# Jupyter Notebook for convenience and leave this file to contain just
-# the model and a get model function
-
-# Data imports for a given
-path_to_data = "existing/elastnet"
-trial_name = "m_z1_nu_z1"
-disp_coord_data = np.loadtxt(f'{path_to_data}/data_compressible/{trial_name}/disp_coord')
-disp_data_data = np.loadtxt(f'{path_to_data}/data_compressible/{trial_name}/disp_data')
-m_data_data = np.loadtxt(f'{path_to_data}/data_compressible/{trial_name}/m_data')
-nu_data_data = np.loadtxt(f'{path_to_data}/data_compressible/{trial_name}/nu_data')
-strain_coord_data = np.loadtxt(f'{path_to_data}/data_compressible/{trial_name}/strain_coord')
-strain_data_data = np.loadtxt(f'{path_to_data}/data_compressible/{trial_name}/strain_data')
-
-# The inverse problem should use the disp_coord data as an input to the DNNs
-
 # The given displacement data should be used to calculate loss and error.
 # Ideally this could be done directly from the displacements, but only one
 # (Axial?) is given. As such, this code uses the strain data to calculate
@@ -290,14 +372,3 @@ strain_data_data = np.loadtxt(f'{path_to_data}/data_compressible/{trial_name}/st
 # The strain may be discretized in between the discrete coordinates of disp_coord. 
 # Hence the dimensions being 1 less in length and the discretized coordinates 
 # having a decimal (0.5)
-
-
-# Standardize the inputs
-# Reshape to guarantee the correct size. (-1 indicates any size)
-ss_coordinates = preprocessing.StandardScaler()
-disp_coord = ss_coordinates.fit_transform(disp_coord_data.reshape(-1, 2))
-
-# Generate the initial values (random, but distributed according to a 
-# truncated normal with standard deviation of 0.1)
-
-
