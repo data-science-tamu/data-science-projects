@@ -43,15 +43,11 @@ class InverseModel(torch.nn.Module):
     NUM_NEURON = 128
     NUM_HIDDEN_LAYERS = 16
     ACTIVATION_FUNCTION = torch.nn.ReLU
-    IS_STRAIN = True
-    IS_DISPLACEMENT = False
     
     def __init__ (self, in_num = INPUT_SIZE, out_num = OUTPUT_SIZE, 
             num_neurons = NUM_NEURON, num_layers:int = NUM_HIDDEN_LAYERS,
-            activation = ACTIVATION_FUNCTION, input_type = IS_STRAIN):
+            activation = ACTIVATION_FUNCTION):
         super().__init__()
-        
-        self.input_type = input_type
         
         self.num_layers = num_layers
         
@@ -65,18 +61,13 @@ class InverseModel(torch.nn.Module):
             setattr(self, f"act{i}", activation())
         self.act_out = activation()
         
-    def forward(self, x):
+    def forward(self, x): # TODO: make this take displacements instead of strain
+        # [u_x, u_y] for each row
         x = self.act1(self.hidden1(x))
         for i in range(2, self.num_layers):
             x = getattr(self, f"act{i}")( getattr(self, f"hidden{i}")(x) )
         x = self.act_out(self.out(x))
         return x
-    
-    def convert_to_input_tensor(self, coordinates): # Uses input type
-        if self.input_type == InverseModel.IS_STRAIN:
-            return coordinates
-        elif self.input_type == InverseModel.IS_DISPLACEMENT:
-            return coordinates
 
 
 # Function for initializing weights and biases. Modifying this will
@@ -141,12 +132,8 @@ class InverseLoss(torch.nn.Module):
              [1.0, 1.0, 1.0], ],
             dtype = torch.float32, device=device)
         
-    def forward(self, pred_E, pred_v, data, is_strain=True):
-        if is_strain:
-            strain = data
-        else: # input is displacement
-            strain = self.calculate_strain(displacement=data)
-        
+    def forward(self, pred_E, pred_v, displacement):
+        strain = self.calculate_strain(displacement) # TODO:
         stress = self.calculate_stress(pred_E, pred_v, strain)
         loss_x, loss_y = self.calculate_loss_r(pred_E, stress)
         
@@ -154,11 +141,6 @@ class InverseLoss(torch.nn.Module):
         loss_e = torch.abs(torch.mean(pred_E) - self.mean_modulo)
         
         return loss_x + loss_y + loss_e / 100.0
-    
-    # Calculate strain from displacement. Lowers each dimension size by 1.
-    def calculate_strain(self, displacement):
-        strain = displacement
-        return strain
     
     # Based on equation(2), the elastic constitutive relation
     def calculate_stress(self, pred_E, pred_v, strain:torch.Tensor):

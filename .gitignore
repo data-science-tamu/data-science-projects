@@ -1,4 +1,7 @@
 /env/
 /.venv/
+
+/results/pred_E/*
+/results/pred_v/*
 notes.txt
 warning-ouput.txt
