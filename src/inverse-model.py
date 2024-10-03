@@ -106,7 +106,7 @@ def display_weights(model:torch.nn.Module):
 
 # Calculating Loss
 class InverseLoss(torch.nn.Module):
-    E_CONSTRAINT = 1.0
+    E_CONSTRAINT = 0.25
     def __init__(self, mean_modulo=E_CONSTRAINT):
         super(InverseLoss, self).__init__()
         self.mean_modulo = mean_modulo
