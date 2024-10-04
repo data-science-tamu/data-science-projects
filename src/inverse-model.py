@@ -155,11 +155,6 @@ class InverseLoss(torch.nn.Module):
         
         return loss_x + loss_y + loss_e / 100.0
     
-    # Calculate strain from displacement. Lowers each dimension size by 1.
-    def calculate_strain(self, displacement):
-        strain = displacement
-        return strain
-    
     # Based on equation(2), the elastic constitutive relation
     def calculate_stress(self, pred_E, pred_v, strain:torch.Tensor):
         # Strain comes stacked (each row is (e_xx, e_yy, r_xy))
