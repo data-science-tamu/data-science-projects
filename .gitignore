@@ -6,3 +6,6 @@
 /data/*
 notes.txt
 warning-ouput.txt
+
+*.gif
+*.pt
