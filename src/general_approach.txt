@@ -1,0 +1,11 @@
+In equation 12 add w_e L_u (equation 10)
+u_i is the data (provided displacements)
+u_pred DNN fitting coordinates to the above (result)
+
+use displacement model to fit coordinates to actual displacement
+Their is a worry about over-fitting
+
+Options
+1. Run simultaneous
+2. Fit u(x,y) first
+3. Fit u(x,y) partial

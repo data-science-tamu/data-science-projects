@@ -391,7 +391,9 @@ class InverseRunner():
                 output = model(coordinates)
                 pred_E = output[:, 0]
                 pred_v = output[:, 1]
-                loss = loss_function(pred_E, pred_v, strain)
+                # calculate strain from predicted displacement
+                # calc_pred_strain
+                loss = loss_function(pred_E, pred_v, strain) # calc_pred_strain
                 loss.backward()
                 optimizer.step()
                 if i % 100 == 0:
