@@ -1,4 +1,4 @@
-In equation 12 add w_e L_u (equation 10)
+In equation 12 add w_u L_u (equation 10)
 u_i is the data (provided displacements)
 u_pred DNN fitting coordinates to the above (result)
 

@@ -4,8 +4,9 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 
-num_epochs = 100 # Assumes 0 to num_epochs (not inclusive)
+num_epochs = 25 # Assumes 0 to num_epochs (not inclusive)
 output_tag = "_d"
+save_animation = False
 
 path_to_data = "./data"
 trial_name = "m_z5_nu_z11"
@@ -23,7 +24,7 @@ colorbarE_exp = fig.colorbar(imE_exp, ax=axE_exp)
 colorbarv_exp = fig.colorbar(imv_exp, ax=axv_exp)
 
 img = []
-final = "final"
+final = "epoch8"
 pred_e = np.loadtxt(path_E + f"{final}.txt").reshape(256,256)
 pred_v = np.loadtxt(path_v + f"{final}.txt").reshape(256,256)
 imE = axE.imshow(pred_e)
@@ -70,8 +71,9 @@ anim = animation.ArtistAnimation(fig, img, interval=400, blit=True, repeat_delay
 # wm = plt.get_current_fig_manager()
 # wm.window.state('zoomed')
 
-f = f"./results/{trial_name}{output_tag}_{num_epochs}e.gif" 
-writer_gif = animation.PillowWriter(fps=5) 
-anim.save(f, writer=writer_gif)
+if save_animation:
+    f = f"./results/{trial_name}{output_tag}_{num_epochs}e.gif" 
+    writer_gif = animation.PillowWriter(fps=5) 
+    anim.save(f, writer=writer_gif)
 
 plt.show()
