@@ -228,6 +228,9 @@ class InverseFittingLoss(torch.nn.Module):
         
         # Modified equation (12) with data loss (10). 
         # 1/100 is the value used in the given code, I don't know it's origin/reason.
+        # TODO: occasionally display the values to see the scale.
+        # loss_e shouldn't be very important (just making sure e isn't 0), if it goes to 0 increase WEIGHT_E
+        # pde loss should be most important
         return loss_x + loss_y + loss_e * InverseFittingLoss.WEIGHT_E + loss_u * InverseFittingLoss.WEIGHT_U
     
     # Probably better to call this once instead of upon every iteration
@@ -432,6 +435,10 @@ class InverseFittingRunner():
             results_folder = OUTPUT_FOLDER,
             split_folders = SUB_FOLDERS) -> None:
         
+        # TODO: try with a fixed displacement after fitting (consider both scenarios this and different loss terms
+        # Since the boundary values seem to be off, could do loss without them (as they are inaccurate). 
+        # Or more iterations of fitting.
+        
         # Initialize elasticity model on correct device
         elas_model.to(device_to)
         elas_model.apply(InverseModel.init_weight_and_bias)
@@ -504,6 +511,8 @@ class InverseFittingRunner():
                     f"{results_folder}/pred_ux_fit{e}.txt",
                     f"{results_folder}/pred_uy_fit{e}.txt"
                 )
+                
+        # TODO: save the fitting model and reuse it for each time.
             
         
         if STATE_MESSAGES: print("DEBUG: training for elasticity constants")
@@ -512,6 +521,7 @@ class InverseFittingRunner():
         optimizer = torch.optim.Adam(
             list(disp_model.parameters()) + list(elas_model.parameters()), 
             lr=lr)
+        # TODO: depending on the the test, including or don't include disp_model.parameters (when not using loss_u)
         training_start_time=time.time()
         for e in range(epochs):
             print(f"Training Epoch {e} starting")
