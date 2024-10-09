@@ -5,7 +5,7 @@ import matplotlib.animation as animation
 
 
 num_fits = 25 # Assumes 0 to num_epochs (not inclusive)
-num_epochs = 21
+num_epochs = 200
 fitting_name = "fit"
 epoch_name = "epoch"
 output_tag = ""

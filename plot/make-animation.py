@@ -6,7 +6,7 @@ import matplotlib.animation as animation
 
 num_epochs = 25 # Assumes 0 to num_epochs (not inclusive)
 output_tag = "_d"
-save_animation = False
+save_animation = True
 
 path_to_data = "./data"
 trial_name = "m_z5_nu_z11"

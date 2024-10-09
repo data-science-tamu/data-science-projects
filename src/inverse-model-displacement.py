@@ -145,7 +145,7 @@ class InverseFittingLoss(torch.nn.Module):
     E_CONSTRAINT = 0.25 # A randomly chosen default value
     # It was 0.01 in the paper, but my first value was then 0.000919
     # TODO: see if the weights work 
-    WEIGHT_U = 0.01 
+    WEIGHT_U = 1
     WEIGHT_E = 0.01
     
     
@@ -580,8 +580,12 @@ def main() -> None:
     
     if STATE_MESSAGES: print("DEBUG: data imported")
     
+    use_input = False
     epochs_on_fitting = 25
-    epochs = 200
+    epochs = 25
+    if use_input:
+        epochs_on_fitting = input("Epochs for fitting: ")
+        epochs = input("Epochs for training")
 
     elas_model = InverseModel()
     disp_model = DisplacementFitModel()
