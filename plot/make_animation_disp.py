@@ -78,7 +78,7 @@ fig.set_size_inches(16, 9)
 anim = animation.ArtistAnimation(fig, img, interval=400, blit=True, repeat_delay=500)
 
 if save_animation:
-    f = f"./results/{trial_name}{output_tag}_{num_epochs}e_elas.gif" 
+    f = f"./results/{trial_name}{output_tag}_{num_epochs}e_{num_fits}f_disp.gif" 
     writer_gif = animation.PillowWriter(fps=5) 
     anim.save(f, writer=writer_gif)
 
