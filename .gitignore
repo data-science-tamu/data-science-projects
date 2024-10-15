@@ -5,9 +5,13 @@
 /results/pred_v/*
 /results/pred_ux/*
 /results/pred_uy/*
+/results/old/*
 /data/*
 notes.txt
 warning-ouput.txt
+env_run.txt
 
 *.gif
 *.pt
+
+*/__pycache__/*
