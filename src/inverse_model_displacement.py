@@ -21,7 +21,7 @@ if DEFAULT_CPU:
 else:
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-if STATE_MESSAGES: print("DEBUG: torch device is", DEVICE)
+if STATE_MESSAGES: print("STATE: torch device is", DEVICE)
 
 # Training information, Default Values
 LEARN_RATE = 0.001
@@ -36,6 +36,8 @@ DATA_SHAPE = torch.tensor([256, 256], device=DEVICE)
 PATH_TO_DATA = "./data"
 TRIAL_NAME = "m_z5_nu_z11"
 OUTPUT_FOLDER = "./results"
+MODEL_SUBFOLDER = "/models"
+PRE_FIT_MODEL_SUBFOLDER = "/pre_fitted"
 SUB_FOLDERS = True
 
 # The Displacement Fitting Model
@@ -144,8 +146,8 @@ class InverseModel(torch.nn.Module):
 class InverseFittingLoss(torch.nn.Module):
     E_CONSTRAINT = 0.25 # A randomly chosen default value
     # It was 0.01 in the paper, but my first value was then 0.000919
-    # TODO: see if the weights work 
-    WEIGHT_U = 1
+    # TODO: Test with different WEIGHT_U
+    WEIGHT_U = 0.01
     WEIGHT_E = 0.01
     
     
@@ -211,23 +213,25 @@ class InverseFittingLoss(torch.nn.Module):
     def forward(self, pred_ux, pred_uy, displacement_data:torch.Tensor,
                 pred_E:torch.Tensor=None, pred_v:torch.Tensor=None, # For when only fitting
                 only_fitting=False):
-        # Equation (10), modified # TODO: ask prof about correctness
+        # Equation (10), modified
         pred_displacement = torch.stack([pred_ux, pred_uy], dim=1)
         loss_u = torch.mean(torch.abs(pred_displacement-displacement_data))
         
         if only_fitting:
-            return loss_u * InverseFittingLoss.WEIGHT_U
+            return loss_u # * InverseFittingLoss.WEIGHT_U # Shouldn't need the weight here
         
         strain = self.calculate_strain(displacement_stack=pred_displacement)
         
         stress = self.calculate_stress(pred_E, pred_v, strain)
+        
+        # DEBUG, it seems that predE and stress(calculated from displacements)
+        # Are occasionally optimized to 0, causing this loss_r function to return nan.
         loss_x, loss_y = self.calculate_loss_r(pred_E, stress)
         
         # Equation (13)
         loss_e = torch.abs(torch.mean(pred_E) - self.mean_modulo)
         
         # Modified equation (12) with data loss (10). 
-        # 1/100 is the value used in the given code, I don't know it's origin/reason.
         # TODO: occasionally display the values to see the scale.
         # loss_e shouldn't be very important (just making sure e isn't 0), if it goes to 0 increase WEIGHT_E
         # pde loss should be most important
@@ -291,7 +295,7 @@ class InverseFittingLoss(torch.nn.Module):
         return stress
     
     # Based on equation (8)
-    # TODO: see if switching to using nn.conv2d is better. (Implicitly calls
+    # NOTE: see if switching to using nn.conv2d is better. (Implicitly calls
     # the functional version, but has a gradient which might help with learning)
     def calculate_loss_r(self, pred_E, stress) -> tuple[float, float]:
         def conv2d(x, W:torch.Tensor):
@@ -423,60 +427,56 @@ class InverseFittingRunner():
         np.savetxt(file_name_ux, pred_ux.cpu().detach().numpy())
         np.savetxt(file_name_uy, pred_uy.cpu().detach().numpy())
     
-    def initialize_and_train_model(
-            elas_model:InverseModel,
+    def initialize_and_train_disp(
+            # NOTE: many of these are different from initialize_and_train_model.
+            # Requiring the final tensors instead of input numpy arrays! 
             disp_model:DisplacementFitModel, 
-            coordinates: np.ndarray, 
-            displacement_data:np.ndarray,
+            loss_function:InverseFittingLoss,
+            disp_coord:torch.Tensor, 
+            displacement_data:torch.Tensor,
+            train_new_displacement = False,
+            # The following are passthrough's for defined settings (can be modified)
             epochs_on_fitting = NUM_FITTING_ONLY_EPOCHS,
             device_to = DEVICE,
-            epochs = NUM_EPOCHS,
             lr = LEARN_RATE,
             results_folder = OUTPUT_FOLDER,
-            split_folders = SUB_FOLDERS) -> None:
+            model_subfolder = MODEL_SUBFOLDER,
+            pre_fit_subfolder = PRE_FIT_MODEL_SUBFOLDER,
+            split_folders = SUB_FOLDERS,
+        ) -> None: # Modifies models inplace
+        disp_model_path  = f"{results_folder}{model_subfolder}{pre_fit_subfolder}/" # Path
+        disp_model_path += f"inverse_disp_model_{TRIAL_NAME}_pre_fit{epochs_on_fitting}.pt" # Name
         
-        # TODO: try with a fixed displacement after fitting (consider both scenarios this and different loss terms
-        # Since the boundary values seem to be off, could do loss without them (as they are inaccurate). 
-        # Or more iterations of fitting.
-        
-        # Initialize elasticity model on correct device
-        elas_model.to(device_to)
-        elas_model.apply(InverseModel.init_weight_and_bias)
-        
-        # Initialize displacement model on correct device
+        # Initialize Displacement Model on Correct Device
         disp_model.to(device_to)
-        assert isinstance(disp_model, DisplacementFitModel) # For intellisense typing convenience
+        
+        # Check if current model exists
+        if not train_new_displacement:
+            print("Searching For model")
+            try:
+                disp_model.load_state_dict( torch.load(
+                        disp_model_path, map_location=device_to, weights_only=True
+                ))
+                print("model found")
+                return disp_model
+            except:
+                print("model not found")
+                pass  # On failure, assumed file not found, train model
+        
+        exit()
+        # ============ Fit model if pre-trained model not found. ============         
+        # Initialize Model Weights
         disp_model.apply(DisplacementFitModel.init_weight_and_bias)
         
-        # optimizer, initialized depending on the current case
-        # optimizer = torch.optim.Optimizer()
-        
-        loss_function = InverseFittingLoss()
-        
-        # Standardize the Discrete Coordinates, and fit to the coordinates (shape)
-        # Of the output elasticity values used in loss calculations
-        disp_coord = InverseFittingRunner.coordinates_to_input_tensor(
-            coordinates, device_to=device_to
-        )
-        elas_coord = InverseFittingRunner.disp_to_elas_input_tensor(
-            coordinates, device_to=device_to
-        )
-        
-        displacement_data = torch.tensor(
-            displacement_data, 
-            dtype=TENSOR_TYPE,
-            device=device_to)
-        
-        if STATE_MESSAGES: print("DEBUG: model initialized")
-        if STATE_MESSAGES: print("DEBUG: starting displacement fitting")
-        
-        # Only Fitting
+        # Initialize Optimizer
         optimizer = torch.optim.Adam(disp_model.parameters(), lr=lr)
+        
+        if STATE_MESSAGES: print("STATE: starting displacement fitting")
+        
         training_start_time=time.time()
         for e in range(epochs_on_fitting):
             print(f"Fitting Epoch {e} starting")
             disp_model.train()
-            elas_model.train()
             epoch_start_time = time.time()
             for i in range (1, 1001):
                 optimizer.zero_grad() # Resets the optimizer?
@@ -511,13 +511,36 @@ class InverseFittingRunner():
                     f"{results_folder}/pred_ux_fit{e}.txt",
                     f"{results_folder}/pred_uy_fit{e}.txt"
                 )
-                
-        # TODO: save the fitting model and reuse it for each time.
-            
         
-        if STATE_MESSAGES: print("DEBUG: training for elasticity constants")
+        torch.save(disp_model.state_dict(), disp_model_path)
+     
+    def initialize_and_train_elas(
+            # NOTE: many of these are different from initialize_and_train_model.
+            # Requiring the final tensors instead of input numpy arrays! 
+            elas_model:InverseModel,
+            disp_model:DisplacementFitModel, 
+            loss_function:InverseFittingLoss,
+            elas_coord:torch.Tensor, 
+            disp_coord:torch.Tensor,
+            displacement_data:torch.tensor,
+            # The following are passthrough's for defined settings (can be modified)
+            epochs = NUM_EPOCHS,
+            epochs_on_fitting = NUM_FITTING_ONLY_EPOCHS,
+            device_to = DEVICE,
+            lr = LEARN_RATE,
+            results_folder = OUTPUT_FOLDER,
+            split_folders = SUB_FOLDERS,
+        ) -> None: # Modifies models inplace
+        # TODO: try with a fixed displacement after fitting (consider both scenarios this and different loss terms
+            # Since the boundary values seem to be off, could do loss without them (as they are inaccurate). 
+            # Or more iterations of fitting.
+        
+        # Initialize elasticity model on correct device
+        elas_model.to(device_to)
+        elas_model.apply(InverseModel.init_weight_and_bias)
         
         # Start Training
+        if STATE_MESSAGES: print("STATE: training for elasticity constants")
         optimizer = torch.optim.Adam(
             list(disp_model.parameters()) + list(elas_model.parameters()), 
             lr=lr)
@@ -548,11 +571,12 @@ class InverseFittingRunner():
                 loss.backward()
                 optimizer.step()
                 if i % 100 == 0:
-                        print(f"Training Epoch: {e} [{i}/1000 ({i/10.0:.2f}%)]\tLoss: {loss.item():.6f}")
+                    print(f"Training Epoch: {e} [{i}/1000 ({i/10.0:.2f}%)]\tLoss: {loss.item():.6f}")
+            
             e_time = time.time()-epoch_start_time
             print(f"Epoch{e} took {e_time} seconds.")
             print(f"Elapsed program time is {timedelta(seconds=time.time() - training_start_time)}")
-            print(f"Estimated time remaining is {timedelta(seconds=(epochs_on_fitting-e) * e_time)}")
+            print(f"Estimated time remaining is {timedelta(seconds=(epochs-e) * e_time)}")
             
             if split_folders:
                 InverseFittingRunner.save_displacement_fit_eval(
@@ -576,7 +600,76 @@ class InverseFittingRunner():
                     f"{results_folder}/pred_E_epoch{e}.txt",
                     f"{results_folder}/pred_v_epoch{e}.txt"
                 )
-        if STATE_MESSAGES: print("DEBUG: Training Finished")
+        if STATE_MESSAGES: print("STATE: Training Finished")
+    
+    def initialize_and_train_model(
+            elas_model:InverseModel,
+            disp_model:DisplacementFitModel, 
+            coordinate_array: np.ndarray, 
+            displacement_array:np.ndarray,
+            train_new_displacement = False,
+            # The following are passthrough's for defined settings (can be modified)
+            epochs = NUM_EPOCHS,
+            epochs_on_fitting = NUM_FITTING_ONLY_EPOCHS,
+            device_to = DEVICE,
+            lr = LEARN_RATE,
+            results_folder = OUTPUT_FOLDER,
+            model_subfolder = MODEL_SUBFOLDER,
+            pre_fit_subfolder = PRE_FIT_MODEL_SUBFOLDER,
+            split_folders = SUB_FOLDERS,
+        ) -> None:
+        # Standardize the Discrete Coordinates into a Tensor
+        disp_coord = InverseFittingRunner.coordinates_to_input_tensor(
+            coordinate_array, device_to=device_to
+        )
+        # For Elasticity, Reduce Dimension Size as Elasticity Calculation Reduces Dimensions
+        elas_coord = InverseFittingRunner.disp_to_elas_input_tensor(
+            coordinate_array, device_to=device_to
+        )
+        
+        # Create Displacement Data Tensor from numpy array
+        displacement_data = torch.tensor(
+            displacement_array, 
+            dtype=TENSOR_TYPE,
+            device=device_to)
+
+        # Initialize Shared Loss Function
+        loss_function = InverseFittingLoss()
+
+        # Long as all passthrough's must be correctly set
+        InverseFittingRunner.initialize_and_train_disp(
+            # Different Parameters (except model)
+            disp_model = disp_model,
+            loss_function = loss_function,
+            disp_coord = disp_coord,
+            displacement_data = displacement_data,
+            # Passthrough's:
+            train_new_displacement = train_new_displacement,
+            epochs_on_fitting = epochs_on_fitting,
+            device_to = device_to,
+            lr = lr,
+            results_folder = results_folder,
+            model_subfolder = model_subfolder,
+            pre_fit_subfolder = pre_fit_subfolder,
+            split_folders = split_folders,
+        )
+        
+        InverseFittingRunner.initialize_and_train_elas(
+            # Different Parameters (except models)
+            elas_model = elas_model,
+            disp_model = disp_model,
+            loss_function = loss_function,
+            elas_coord = elas_coord,
+            disp_coord = disp_coord,
+            displacement_data = displacement_data,
+            # Passthrough's
+            epochs = epochs,
+            epochs_on_fitting=epochs_on_fitting,
+            device_to = device_to,
+            lr = lr,
+            results_folder = results_folder,
+            split_folders = split_folders,
+        )
 
 
 def main() -> None:
@@ -588,7 +681,7 @@ def main() -> None:
     strain_coord_data = np.loadtxt(f'{PATH_TO_DATA}/compressible/{TRIAL_NAME}/strain_coord')
     strain_data_data = np.loadtxt(f'{PATH_TO_DATA}/compressible/{TRIAL_NAME}/strain_data')
     
-    if STATE_MESSAGES: print("DEBUG: data imported")
+    if STATE_MESSAGES: print("STATE: data imported")
     
     use_input = False
     epochs_on_fitting = 25
@@ -612,8 +705,10 @@ def main() -> None:
     type_string = "_d"
     torch.save(elas_model.state_dict(), 
         f"{OUTPUT_FOLDER}/inverse_model{type_string}_{TRIAL_NAME}_f{epochs_on_fitting}_e{epochs}.pt")
+    torch.save(disp_model.state_dict(),
+        f"{OUTPUT_FOLDER}/inverse_disp_model{type_string}_{TRIAL_NAME}_f{epochs_on_fitting}_e{epochs}.pt")
     
-    if STATE_MESSAGES: print("DEBUG: Done")
+    if STATE_MESSAGES: print("STATE: Done")
 
 if __name__ == "__main__":
     main()

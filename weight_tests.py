@@ -28,8 +28,8 @@ def test_weight(weight:float) -> None:
     src.InverseFittingLoss.WEIGHT_U = weight
     
     use_input = False
-    epochs_on_fitting = 15
-    epochs_on_training = 50
+    epochs_on_fitting = 50
+    epochs_on_training = 100
     if use_input:
         epochs_on_fitting = input("Epochs for fitting: ")
         epochs_on_training = input("Epochs for training")
@@ -42,8 +42,8 @@ def test_weight(weight:float) -> None:
     src.InverseFittingRunner.initialize_and_train_model(
         elas_model = elas_model,
         disp_model = disp_model,
-        coordinates = disp_coord_data,
-        displacement_data = disp_data_data,
+        coordinate_array = disp_coord_data,
+        displacement_array = disp_data_data,
         epochs = epochs_on_training, # Overriding default
         epochs_on_fitting = epochs_on_fitting, # Overriding default
     )
@@ -54,15 +54,15 @@ def test_weight(weight:float) -> None:
     print("DEBUG: Done")
     
     anim.save_both(epochs_on_fitting, epochs_on_training, TRIAL_NAME, f"wu{src.InverseFittingLoss.WEIGHT_U}")
-    clear_folders()
+    clear_folders(clear_fit=False)
 
 def main():
-    # test_weight(1.5)
-    # test_weight(0.5)
-    # test_weight(0.1)
-    # test_weight(2)
-    # test_weight(0.01)
-    test_weight(0.05)
+    test_weight(1)
+    test_weight(1.5)
+    test_weight(0.5)
+    test_weight(2)
+    test_weight(0.1)
+    test_weight(0.01)
 
 if __name__ == "__main__":
     main()
