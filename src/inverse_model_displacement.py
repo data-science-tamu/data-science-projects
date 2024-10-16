@@ -452,18 +452,17 @@ class InverseFittingRunner():
         
         # Check if current model exists
         if not train_new_displacement:
-            print("Searching For model")
+            print("Searching for disp_model")
             try:
                 disp_model.load_state_dict( torch.load(
                         disp_model_path, map_location=device_to, weights_only=True
                 ))
-                print("model found")
+                print("disp_model found")
                 return disp_model
             except:
-                print("model not found")
+                print("disp_model not found")
                 pass  # On failure, assumed file not found, train model
         
-        exit()
         # ============ Fit model if pre-trained model not found. ============         
         # Initialize Model Weights
         disp_model.apply(DisplacementFitModel.init_weight_and_bias)
