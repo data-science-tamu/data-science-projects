@@ -5,11 +5,15 @@
 /results/pred_v/*
 /results/pred_ux/*
 /results/pred_uy/*
+/results/pred_exx/*
+/results/pred_eyy/*
+/results/pred_rxy/*
 /results/old/*
 /data/*
 notes.txt
 warning-ouput.txt
 env_run.txt
+src/inverse_model_displacement_old.py
 
 *.gif
 *.pt

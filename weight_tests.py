@@ -1,9 +1,9 @@
 # import the main code file
 # TODO? Split each component of inverse_model_displacement into a file in
 # its own folder?
-import src.inverse_model_displacement as src
-from src.inverse_model_displacement import torch
-from src.inverse_model_displacement import np
+import src.inverse_model_fitting as src
+from src.inverse_model_fitting import torch
+from src.inverse_model_fitting import np
 
 from plot import animation as anim
 from results.clear_folders import clear_folders
