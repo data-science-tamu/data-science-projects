@@ -8,7 +8,13 @@ from datetime import timedelta
 
 from typing import Tuple
 
-# Program setup
+# ================================== Sources ================================= #
+# Positional Encoding
+# https://towardsdatascience.com/master-positional-encoding-part-i-63c05d90a0c3
+
+# TODO: Find the rest of the resources
+
+# ========================= Program Setup / Settings ========================= #
 STATE_MESSAGES = True
 DEFAULT_CPU = False # If false defaults to gpu
 DEFAULT_CPU = input("Default to CPU (y/n):").lower() == "y"
@@ -45,7 +51,10 @@ LEARN_RATE = 0.001
 # https://machinelearningmastery.com/using-dropout-regularization-in-pytorch-models/
 # Mentions a p of 0.2 is a good starting point
 
-NUM_NEURON_FIT = 128
+NUM_NEURON_FIT = 128 # MUST BE EVEN (d_model = NUM_NEURON // 2)
+D_POS_ENC_FIT = NUM_NEURON_FIT // 2 # d_model
+assert(NUM_NEURON_FIT % 2 == 0) # NOTE: ONLY FOR 2D INPUT DATA
+
 NUM_HIDDEN_LAYER_FIT = 16
 ACTIVATION_FUNCTION_FIT = torch.nn.SiLU # aka "swish", the paper said it was best for displacement
 ACTIVATION_FUNCTION_OUT_FIT = ACTIVATION_FUNCTION_FIT
@@ -82,6 +91,7 @@ WEIGHT_D = 1.0
 
 # ========================== Parameter Verification ========================== #
 
+# assert(not (FITTING_STRAIN and FITTING_DISPLACEMENT))
 if (FITTING_STRAIN and FITTING_DISPLACEMENT):
     print("ERROR choose only one type to be fitting.")
     exit()
@@ -91,52 +101,38 @@ def refresh_devices():
 
 # ================================== Models ================================== #
 # Positional Encoding (asked for embedding but I found this instead, should be similar)
-# TODO: refine and customize
-# https://github.com/vsitzmann/siren/blob/4df34baee3f0f9c8f351630992c1fe1f69114b5f/modules.py#L222
-import math
-from torch import nn
-class PosEncodingNeRF(nn.Module):
-    '''Module to add positional encoding as in NeRF [Mildenhall et al. 2020].'''
-    def __init__(self, in_features, sidelength=None, fn_samples=None, use_nyquist=True):
+# See https://towardsdatascience.com/master-positional-encoding-part-i-63c05d90a0c3
+# for more information and reference code
+# TODO: see if I need torch.no_grad is needed in forward (or elsewhere in this class)
+# TODO: Generalize to work for nD input if it turns out that this works for the 2D case
+class PositionalEncoding(torch.nn.Module):
+    # Only does the 2D case currently
+    # Example of the 2D case [x, y]
+    # Assumes points are in a tensor of shape (n*m, 2) [[x,y], ...]
+    # where [:,0] is x and [:,1] is y
+    def __init__ (self, d_model:int, dim_in:int, min_freq=1e-4):
         super().__init__()
+        self.dim_in = torch.tensor(dim_in, device=DEVICE)
+        self.dim_out = d_model * 2
+        
+        d_model = torch.tensor(d_model, device=DEVICE)
+        min_freq = torch.tensor(min_freq, device=DEVICE)
+        self.freqs = min_freq**(2*(torch.arange(d_model)//2)/d_model) 
+            
+    # x = pos_tensor (n*m, [x,y])
+    def forward(self, x:torch.Tensor): 
+        pos_d0 = x[:,0]
+        pos_enc_d0 = pos_d0.reshape(-1,1) * self.freqs.reshape(1, -1)
+        pos_enc_d0[:, ::2] = torch.cos(pos_enc_d0[:, ::2])
+        pos_enc_d0[:, 1::2] = torch.sin(pos_enc_d0[:, 1::2])
+        
+        pos_d1 = x[:,1]
+        pos_enc_d1 = pos_d1.reshape(-1,1) * self.freqs.reshape(1, -1)
+        pos_enc_d1[:, ::2] = torch.cos(pos_enc_d1[:, ::2])
+        pos_enc_d1[:, 1::2] = torch.sin(pos_enc_d1[:, 1::2])
+    
+        return torch.cat([pos_enc_d0, pos_enc_d1], axis=1)
 
-        self.in_features = in_features
-
-        if self.in_features == 3:
-            self.num_frequencies = 10
-        elif self.in_features == 2:
-            assert sidelength is not None
-            if isinstance(sidelength, int):
-                sidelength = (sidelength, sidelength)
-            self.num_frequencies = 4
-            if use_nyquist:
-                self.num_frequencies = self.get_num_frequencies_nyquist(min(sidelength[0], sidelength[1]))
-        elif self.in_features == 1:
-            assert fn_samples is not None
-            self.num_frequencies = 4
-            if use_nyquist:
-                self.num_frequencies = self.get_num_frequencies_nyquist(fn_samples)
-
-        self.out_dim = in_features + 2 * in_features * self.num_frequencies
-
-    def get_num_frequencies_nyquist(self, samples):
-        nyquist_rate = 1 / (2 * (2 * 1 / samples))
-        return int(math.floor(math.log(nyquist_rate, 2)))
-
-    def forward(self, coords):
-        coords = coords.view(coords.shape[0], -1, self.in_features)
-
-        coords_pos_enc = coords
-        for i in range(self.num_frequencies):
-            for j in range(self.in_features):
-                c = coords[..., j]
-
-                sin = torch.unsqueeze(torch.sin((2 ** i) * np.pi * c), -1)
-                cos = torch.unsqueeze(torch.cos((2 ** i) * np.pi * c), -1)
-
-                coords_pos_enc = torch.cat((coords_pos_enc, sin, cos), axis=-1)
-
-        return coords_pos_enc.reshape(coords.shape[0], -1, self.out_dim)
 
 # Fitting Model
 class FittingModel(torch.nn.Module):
@@ -156,8 +152,8 @@ class FittingModel(torch.nn.Module):
         # This would also be nice as it would separate positional encoding
         # From the fitting itself.
         # Could make it a subfunction to make calling easier.
-        self.positional_encoding = PosEncodingNeRF(in_features=in_num, sidelength=ELAS_OUTPUT_SHAPE)
-        self.hidden1 = torch.nn.Linear(self.positional_encoding.out_dim, NUM_NEURON_FIT)
+        self.pos_encode = PositionalEncoding(D_POS_ENC_FIT, 2)
+        self.hidden1 = torch.nn.Linear(self.pos_encode.out_dim, NUM_NEURON_FIT)
         for i in range(2, self.num_layers):
             setattr(self, f"hidden{i}", torch.nn.Linear(NUM_NEURON_FIT, NUM_NEURON_FIT))
         self.out = torch.nn.Linear(NUM_NEURON_FIT, out_num)
@@ -612,11 +608,6 @@ class InverseFittingRunner():
         
         # Initialize Displacement Model on Correct Device
         strain_model.to(DEVICE)
-                
-        # TODO: REMOVE THIS AS JUST USING FOR TESTING IDEA
-        strain_model_path += ".test"
-        pos_encode = PosEncodingNeRF(2, [256,256]).to(DEVICE)
-        strain_coord = pos_encode(strain_coord.reshape([256,256])).reshape([-1,pos_encode.out_dim])
         
         # Check if current model exists
         if not fit_new_model:
@@ -817,8 +808,8 @@ class InverseFittingRunner():
 def main() -> None:
     global NUM_TRAINING_EPOCHS
     global NUM_FITTING_EPOCHS
-    NUM_FITTING_EPOCHS = 2
-    NUM_TRAINING_EPOCHS = 2
+    NUM_FITTING_EPOCHS = 10
+    NUM_TRAINING_EPOCHS = 0
     
     global FITTING_STRAIN
     global FITTING_DISPLACEMENT
