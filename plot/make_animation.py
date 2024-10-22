@@ -52,24 +52,8 @@ for i in range(0, num_epochs):
     colorbarE_pred.update_normal(imE)
     colorbarE_pred.update_normal(imv)
     
-# imE = axE.imshow(np.loadtxt(path_E + f"epochfinal.txt").reshape(256,256))
-# imv = axv.imshow(np.loadtxt(path_v + f"epochfinal.txt").reshape(256,256))
-# img.append([imE, imv])
-
 fig.set_size_inches(16, 9)
 anim = animation.ArtistAnimation(fig, img, interval=400, blit=True, repeat_delay=500)
-
-# To save the animation, use e.g.
-#
-# ani.save("movie.mp4")
-#
-# or
-#
-# writer = animation.FFMpegWriter(
-#     fps=15, metadata=dict(artist='Me'), bitrate=1800)
-# ani.save("movie.mp4", writer=writer)
-# wm = plt.get_current_fig_manager()
-# wm.window.state('zoomed')
 
 if save_animation:
     f = f"./results/{trial_name}{output_tag}_{num_epochs}e.gif" 

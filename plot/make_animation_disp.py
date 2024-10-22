@@ -4,11 +4,12 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
 
-num_fits = 25 # Assumes 0 to num_epochs (not inclusive)
+num_fits = 0 # Assumes 0 to num_epochs (not inclusive)
 num_epochs = 200
 fitting_name = "fit"
 epoch_name = "epoch"
-output_tag = ""
+output_tag = "_u0.01"
+save_animation = True
 
 path_to_data = "./data"
 trial_name = "m_z5_nu_z11"
@@ -57,7 +58,7 @@ for i in range(0, num_fits):
     colorbarx_pred.update_normal(imE)
     colorbary_pred.update_normal(imv)
 
-for i in range(0, num_epochs):
+for i in range(25, num_epochs):
     pred_ux = np.loadtxt(path_ux + f"{epoch_name}{i}.txt").reshape(dimension,dimension)
     pred_uy = np.loadtxt(path_uy + f"{epoch_name}{i}.txt").reshape(dimension,dimension)
     imE = axx.imshow(pred_ux)
@@ -76,20 +77,9 @@ for i in range(0, num_epochs):
 fig.set_size_inches(16, 9)
 anim = animation.ArtistAnimation(fig, img, interval=400, blit=True, repeat_delay=500)
 
-# To save the animation, use e.g.
-#
-# ani.save("movie.mp4")
-#
-# or
-#
-# writer = animation.FFMpegWriter(
-#     fps=15, metadata=dict(artist='Me'), bitrate=1800)
-# ani.save("movie.mp4", writer=writer)
-# wm = plt.get_current_fig_manager()
-# wm.window.state('zoomed')
-
-# f = f"./results/{trial_name}{output_tag}_{num_epochs}e.gif" 
-# writer_gif = animation.PillowWriter(fps=5) 
-# anim.save(f, writer=writer_gif)
+if save_animation:
+    f = f"./results/{trial_name}{output_tag}_{num_epochs}e_{num_fits}f_disp.gif" 
+    writer_gif = animation.PillowWriter(fps=5) 
+    anim.save(f, writer=writer_gif)
 
 plt.show()
