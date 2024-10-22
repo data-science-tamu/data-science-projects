@@ -17,5 +17,6 @@ src/inverse_model_displacement_old.py
 
 *.gif
 *.pt
+*.txt
 
 */__pycache__/*

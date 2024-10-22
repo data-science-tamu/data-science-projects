@@ -3,8 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-from results.clear_folders import clear_folders
-
 FITTING_NAME = "fit"
 EPOCH_NAME = "epoch"
 
@@ -39,11 +37,11 @@ def save_elasticity(
     pred_v = np.loadtxt(path_v + f"{final}.txt").reshape(256,256)
     imE = axE.imshow(pred_e)
     imv = axv.imshow(pred_v)
-    imE_err = axE_err.imshow(np.abs((pred_e-m_data)/m_data))
-    imv_err = axv_err.imshow(np.abs((pred_v-nu_data)/nu_data))
+    imE_err = axE_err.imshow(np.abs(pred_e-m_data), cmap='turbo')
+    imv_err = axv_err.imshow(np.abs(pred_v-nu_data), cmap='turbo')
 
-    print(np.abs((pred_e-m_data)/m_data).sum())
-    print(np.abs((pred_v-nu_data)/nu_data).sum())
+    print(np.abs(pred_e-m_data).sum())
+    print(np.abs(pred_v-nu_data).sum())
 
     colorbarE_pred = fig.colorbar(imE, ax=axE)
     colorbarv_pred = fig.colorbar(imv, ax=axv)
@@ -58,13 +56,13 @@ def save_elasticity(
         pred_v = np.loadtxt(path_v + f"epoch{i}.txt").reshape(256,256)
         imE = axE.imshow(pred_e)
         imv = axv.imshow(pred_v)
-        imE_err = axE_err.imshow(np.abs((pred_e-m_data)/m_data))
-        imv_err = axv_err.imshow(np.abs((pred_v-nu_data)/nu_data))
+        imE_err = axE_err.imshow(np.abs(pred_e-m_data), cmap='turbo')
+        imv_err = axv_err.imshow(np.abs(pred_v-nu_data), cmap='turbo')
         img.append([imE, imv, imE_err, imv_err])
         colorbarE_pred.update_normal(imE)
         colorbarv_pred.update_normal(imv)
-        colorbarE_pred.update_normal(imE_err)
-        colorbarv_pred.update_normal(imv_err)
+        colorbarE_err.update_normal(imE_err)
+        colorbarv_err.update_normal(imv_err)
         
     fig.set_size_inches(16, 9)
     anim = animation.ArtistAnimation(fig, img, interval=400, blit=True, repeat_delay=500)
@@ -75,8 +73,7 @@ def save_elasticity(
     writer_gif = animation.PillowWriter(fps=5) 
     anim.save(f, writer=writer_gif)
     
-    # clear_folders()
-
+    
 def save_displacement(
         # Must specify
         num_fits:int, # Assumes 0 to num_epochs (not inclusive)
@@ -107,16 +104,16 @@ def save_displacement(
     colorbary_exp = fig.colorbar(imy_exp, ax=axy_exp)
 
     img = []
-    final = f"epoch{num_epochs-1}"
+    final = f"fit{num_fits-1}"
     pred_ux = np.loadtxt(path_ux + f"{final}.txt").reshape(disp_dimension,disp_dimension)
     pred_uy = np.loadtxt(path_uy + f"{final}.txt").reshape(disp_dimension,disp_dimension)
     imE = axx.imshow(pred_ux)
     imv = axy.imshow(pred_uy)
-    imx_err = axx_err.imshow(np.abs((pred_ux-ux_data)/ux_data))
-    imy_err = axy_err.imshow(np.abs((pred_uy-uy_data)/uy_data))
+    imx_err = axx_err.imshow(np.abs(pred_ux-ux_data), cmap='turbo')
+    imy_err = axy_err.imshow(np.abs(pred_uy-uy_data), cmap='turbo')
 
-    print(np.abs((pred_ux-ux_data)/ux_data).sum())
-    print(np.abs((pred_uy-uy_data)/uy_data).sum())
+    print(np.abs(pred_ux-ux_data).sum())
+    print(np.abs(pred_uy-uy_data).sum())
 
     colorbarx_pred = fig.colorbar(imE, ax=axx)
     colorbary_pred = fig.colorbar(imv, ax=axy)
@@ -131,8 +128,8 @@ def save_displacement(
             pred_uy = np.loadtxt(path_uy + f"{FITTING_NAME}{i}.txt").reshape(disp_dimension,disp_dimension)
             imE = axx.imshow(pred_ux)
             imv = axy.imshow(pred_uy)
-            imx_err = axx_err.imshow(np.abs((pred_ux-ux_data)/ux_data))
-            imy_err = axy_err.imshow(np.abs((pred_uy-uy_data)/uy_data))
+            imx_err = axx_err.imshow(np.abs(pred_ux-ux_data), cmap='turbo')
+            imy_err = axy_err.imshow(np.abs(pred_uy-uy_data), cmap='turbo')
             img.append([imE, imv, imx_err, imy_err])
             colorbarx_pred.update_normal(imE)
             colorbary_pred.update_normal(imv)
@@ -145,8 +142,8 @@ def save_displacement(
             pred_uy = np.loadtxt(path_uy + f"{EPOCH_NAME}{i}.txt").reshape(disp_dimension,disp_dimension)
             imE = axx.imshow(pred_ux)
             imv = axy.imshow(pred_uy)
-            imx_err = axx_err.imshow(np.abs((pred_ux-ux_data)/ux_data))
-            imy_err = axy_err.imshow(np.abs((pred_uy-uy_data)/uy_data))
+            imx_err = axx_err.imshow(np.abs(pred_ux-ux_data), cmap='turbo')
+            imy_err = axy_err.imshow(np.abs(pred_uy-uy_data), cmap='turbo')
             img.append([imE, imv, imx_err, imy_err])
             colorbarx_pred.update_normal(imE)
             colorbary_pred.update_normal(imv)
@@ -163,19 +160,21 @@ def save_displacement(
     f = f"./results/{trial_name}{output_tag}{training_tag}_disp.gif" 
     writer_gif = animation.PillowWriter(fps=5) 
     anim.save(f, writer=writer_gif)
-    
-    # clear_folders()
-
+ 
 def save_both(
         num_fits:int, # Assumes 0 to num_epochs (not inclusive)
         num_epochs:int,
         trial_name:str,
         output_tag :str,
     ):
-    save_displacement(num_fits, num_epochs, trial_name, output_tag, save_epoch=False)
-    save_displacement(num_fits, num_epochs, trial_name, output_tag, save_fit=False)
+    # save_displacement(num_fits, num_epochs, trial_name, output_tag, save_epoch=False)
+    # save_displacement(num_fits, num_epochs, trial_name, output_tag, save_fit=False)
     save_elasticity(num_epochs, trial_name, output_tag)
-    
+   
+   
+
+
+ 
 if __name__ == "__main__":
-    save_both(15, 50, "m_z5_nu_z11", f"test")
+    save_both(50, 100, "m_z5_nu_z11", f"_1wd")
     pass
