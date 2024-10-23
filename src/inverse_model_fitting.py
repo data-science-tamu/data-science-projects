@@ -117,7 +117,7 @@ class PositionalEncoding(torch.nn.Module):
         
         d_model = torch.tensor(d_model, device=DEVICE)
         min_freq = torch.tensor(min_freq, device=DEVICE)
-        self.freqs = min_freq**(2*(torch.arange(d_model)//2)/d_model) 
+        self.freqs = min_freq**(2*(torch.arange(d_model, device=DEVICE)//2)/d_model) 
             
     # x = pos_tensor (n*m, [x,y])
     def forward(self, x:torch.Tensor): 
@@ -153,7 +153,7 @@ class FittingModel(torch.nn.Module):
         # From the fitting itself.
         # Could make it a subfunction to make calling easier.
         self.pos_encode = PositionalEncoding(D_POS_ENC_FIT, 2)
-        self.hidden1 = torch.nn.Linear(self.pos_encode.out_dim, NUM_NEURON_FIT)
+        self.hidden1 = torch.nn.Linear(self.pos_encode.dim_out, NUM_NEURON_FIT)
         for i in range(2, self.num_layers):
             setattr(self, f"hidden{i}", torch.nn.Linear(NUM_NEURON_FIT, NUM_NEURON_FIT))
         self.out = torch.nn.Linear(NUM_NEURON_FIT, out_num)
@@ -164,12 +164,13 @@ class FittingModel(torch.nn.Module):
         self.act_out = ACTIVATION_FUNCTION_OUT_FIT()
     
     def forward(self, x):
-        # x = self.positional_encoding(x).detach()
+        x = self.pos_encode(x)
         x = self.act1(self.hidden1(x))
         for i in range(2, self.num_layers):
             x = getattr(self, f"act{i}")( getattr(self, f"hidden{i}")(x) )
-        x = self.act_out(self.out(x))
-        return x
+        # TODO: Find a better activation function (need numbers ~ (-3 to 3) output)
+        # x = self.act_out(self.out(x))
+        return self.out(x)
 
     def init_weight_and_bias(layer):    
         std_dev = 0.1
@@ -808,8 +809,8 @@ class InverseFittingRunner():
 def main() -> None:
     global NUM_TRAINING_EPOCHS
     global NUM_FITTING_EPOCHS
-    NUM_FITTING_EPOCHS = 10
-    NUM_TRAINING_EPOCHS = 0
+    NUM_FITTING_EPOCHS = 20
+    NUM_TRAINING_EPOCHS = 50
     
     global FITTING_STRAIN
     global FITTING_DISPLACEMENT
@@ -839,10 +840,11 @@ def main() -> None:
     )
        
     # Save DNN
+    tag = "_no_out_act"
     torch.save(elas_model.state_dict(), 
-        f"{OUTPUT_FOLDER}{MODEL_SUBFOLDER}/elasticity_{TRIAL_NAME}_{WEIGHT_D}wd_{NUM_FITTING_EPOCHS}f_{NUM_TRAINING_EPOCHS}e.pt")
+        f"{OUTPUT_FOLDER}{MODEL_SUBFOLDER}/elasticity_{TRIAL_NAME}_{WEIGHT_D}wd_{NUM_FITTING_EPOCHS}f_{NUM_TRAINING_EPOCHS}e{tag}.pt")
     torch.save(strain_model.state_dict(),
-        f"{OUTPUT_FOLDER}{MODEL_SUBFOLDER}/strain_fit_{TRIAL_NAME}_{WEIGHT_D}wd_{NUM_FITTING_EPOCHS}f_{NUM_TRAINING_EPOCHS}e.pt")
+        f"{OUTPUT_FOLDER}{MODEL_SUBFOLDER}/strain_fit_{TRIAL_NAME}_{WEIGHT_D}wd_{NUM_FITTING_EPOCHS}f_{NUM_TRAINING_EPOCHS}e{tag}.pt")
     
     if STATE_MESSAGES: print("STATE: Done")
 
