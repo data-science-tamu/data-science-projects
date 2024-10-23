@@ -73,7 +73,6 @@ def save_elasticity(
     writer_gif = animation.PillowWriter(fps=5) 
     anim.save(f, writer=writer_gif)
     
-    
 def save_displacement(
         # Must specify
         num_fits:int, # Assumes 0 to num_epochs (not inclusive)
@@ -160,7 +159,117 @@ def save_displacement(
     f = f"./results/{trial_name}{output_tag}{training_tag}_disp.gif" 
     writer_gif = animation.PillowWriter(fps=5) 
     anim.save(f, writer=writer_gif)
- 
+
+def save_strain(
+        # Must specify
+        num_fits:int, # Assumes 0 to num_epochs (not inclusive)
+        num_epochs:int,
+        trial_name:str,
+        output_tag :str,
+        
+        # Optional settings
+        save_fit = True,
+        save_epoch = True,
+        path_to_data = "./data",
+        strain_dimension = 256,
+        path_exx = "./results/pred_exx/",
+        path_eyy = "./results/pred_eyy/",
+        path_rxy = "./results/pred_rxy/",
+    ):
+    
+    strain_data = np.loadtxt(f'{path_to_data}/compressible/{trial_name}/strain_data')
+
+    exx_data = strain_data[:, 0].reshape(strain_dimension, strain_dimension)
+    eyy_data = strain_data[:, 1].reshape(strain_dimension, strain_dimension)
+    rxy_data = strain_data[:, 2].reshape(strain_dimension, strain_dimension)
+
+
+    fig, (
+        (axx_exp, axx, axx_err), 
+        (axy_exp, axy, axy_err),
+        (axr_exp, axr, axr_err)) = plt.subplots(3, 3)
+
+    imx_exp = axx_exp.imshow(exx_data)
+    imy_exp = axy_exp.imshow(eyy_data)
+    imr_exp = axr_exp.imshow(rxy_data)
+    colorbarx_exp = fig.colorbar(imx_exp, ax=axx_exp)
+    colorbary_exp = fig.colorbar(imy_exp, ax=axy_exp)
+    colorbarr_exp = fig.colorbar(imr_exp, ax=axr_exp)
+
+    img = []
+    final = f"fit{num_fits-1}"
+    pred_exx = np.loadtxt(path_exx + f"{final}.txt").reshape(strain_dimension,strain_dimension)
+    pred_eyy = np.loadtxt(path_eyy + f"{final}.txt").reshape(strain_dimension,strain_dimension)
+    pred_rxy = np.loadtxt(path_rxy + f"{final}.txt").reshape(strain_dimension,strain_dimension)
+    imx = axx.imshow(pred_exx)
+    imy = axy.imshow(pred_eyy)
+    imr = axr.imshow(pred_rxy)
+    imx_err = axx_err.imshow(np.abs(pred_exx-exx_data), cmap='turbo')
+    imy_err = axy_err.imshow(np.abs(pred_eyy-eyy_data), cmap='turbo')
+    imr_err = axr_err.imshow(np.abs(pred_rxy-rxy_data), cmap='turbo')
+
+    print(np.abs(pred_exx-exx_data).sum())
+    print(np.abs(pred_eyy-eyy_data).sum())
+    print(np.abs(pred_rxy-rxy_data).sum())
+
+    colorbarx_pred = fig.colorbar(imx, ax=axx)
+    colorbary_pred = fig.colorbar(imy, ax=axy)
+    colorbarr_pred = fig.colorbar(imr, ax=axr)
+    colorbarx_err = fig.colorbar(imx_err, ax=axx_err)
+    colorbary_err = fig.colorbar(imy_err, ax=axy_err)
+    colorbarr_err = fig.colorbar(imr_err, ax=axr_err)
+
+    # img.append([imE, imv, imx_err, imy_err])
+
+    if save_fit:
+        for i in range(0, num_fits):
+            pred_exx = np.loadtxt(path_exx + f"{FITTING_NAME}{i}.txt").reshape(strain_dimension,strain_dimension)
+            pred_eyy = np.loadtxt(path_eyy + f"{FITTING_NAME}{i}.txt").reshape(strain_dimension,strain_dimension)
+            pred_rxy = np.loadtxt(path_rxy + f"{FITTING_NAME}{i}.txt").reshape(strain_dimension,strain_dimension)
+            imx = axx.imshow(pred_exx)
+            imy = axy.imshow(pred_eyy)
+            imr = axr.imshow(pred_rxy)
+            imx_err = axx_err.imshow(np.abs(pred_exx-exx_data), cmap='turbo')
+            imy_err = axy_err.imshow(np.abs(pred_eyy-eyy_data), cmap='turbo')
+            imr_err = axr_err.imshow(np.abs(pred_rxy-rxy_data), cmap='turbo')
+            img.append([imx, imy, imr, imx_err, imy_err, imr_err])
+            colorbarx_pred.update_normal(imx)
+            colorbary_pred.update_normal(imy)
+            colorbarr_pred.update_normal(imr)
+            colorbarx_err.update_normal(imx_err)
+            colorbary_err.update_normal(imy_err)
+            colorbarr_err.update_normal(imr_err)
+
+    if save_epoch:
+        for i in range(0, num_epochs):
+            pred_exx = np.loadtxt(path_exx + f"{EPOCH_NAME}{i}.txt").reshape(strain_dimension,strain_dimension)
+            pred_eyy = np.loadtxt(path_eyy + f"{EPOCH_NAME}{i}.txt").reshape(strain_dimension,strain_dimension)
+            pred_rxy = np.loadtxt(path_rxy + f"{EPOCH_NAME}{i}.txt").reshape(strain_dimension,strain_dimension)
+            imx = axx.imshow(pred_exx)
+            imy = axy.imshow(pred_eyy)
+            imr = axr.imshow(pred_rxy)
+            imx_err = axx_err.imshow(np.abs(pred_exx-exx_data), cmap='turbo')
+            imy_err = axy_err.imshow(np.abs(pred_eyy-eyy_data), cmap='turbo')
+            imr_err = axr_err.imshow(np.abs(pred_rxy-rxy_data), cmap='turbo')
+            img.append([imx, imy, imr, imx_err, imy_err, imr_err])
+            colorbarx_pred.update_normal(imx)
+            colorbary_pred.update_normal(imy)
+            colorbary_pred.update_normal(imr)
+            colorbarx_err.update_normal(imx_err)
+            colorbary_err.update_normal(imy_err)
+            colorbary_err.update_normal(imr_err)
+        
+
+    fig.set_size_inches(16, 9)
+    anim = animation.ArtistAnimation(fig, img, interval=400, blit=True, repeat_delay=500)
+
+    training_tag = (f"_{num_epochs}e" if save_epoch else "") + (f"_{num_fits}f" if save_fit else "")
+    if output_tag:
+        output_tag = "_" + output_tag
+    f = f"./results/{trial_name}{output_tag}{training_tag}_strain.gif" 
+    writer_gif = animation.PillowWriter(fps=5) 
+    anim.save(f, writer=writer_gif)
+  
 def save_both(
         num_fits:int, # Assumes 0 to num_epochs (not inclusive)
         num_epochs:int,
@@ -171,10 +280,10 @@ def save_both(
     # save_displacement(num_fits, num_epochs, trial_name, output_tag, save_fit=False)
     save_elasticity(num_epochs, trial_name, output_tag)
    
-   
-
-
  
 if __name__ == "__main__":
-    save_both(50, 100, "m_z5_nu_z11", f"_1wd")
+    # save_both(50, 100, "m_z5_nu_z11", f"_1wd")
+    save_strain(20, 50, "m_z5_nu_z11", output_tag=f"_1wd_no_out_act", save_epoch=False)
+    save_strain(20, 50, "m_z5_nu_z11", output_tag=f"_1wd_no_out_act", save_fit=False)
+    save_elasticity(50, "m_z5_nu_z11", output_tag=f"_1wd_no_out_act")
     pass
